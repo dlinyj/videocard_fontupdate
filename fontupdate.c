@@ -140,12 +140,12 @@ void print_help() {
     printf("Usage: fontupdate [OPTIONS]\n");
     printf("Update fonts in VGA BIOS ROM files.\n\n");
     printf("Options:\n");
-    printf("  --input <file>     Input ROM file (required)\n");
-    printf("  --f8 <file>        8x8 font file\n");
-    printf("  --f14 <file>       8x14 font file\n");
-    printf("  --f16 <file>       8x16 font file\n");
+    printf("  -i, --input <file>  Input ROM file (required)\n");
+    printf("  -8, --f8 <file>     8x8 font file\n");
+    printf("  -4, --f14 <file>    8x14 font file\n");
+    printf("  -6, --f16 <file>    8x16 font file\n");
     printf("  -o, --output <file> Output ROM file (default: %s)\n", DEFAULT_OUTPUT);
-    printf("  -h, --help         Display this help message\n\n");
+    printf("  -h, --help          Display this help message\n\n");
     printf("If any font file is not specified, that font will not be replaced.\n");
     exit(0);
 }
@@ -173,7 +173,7 @@ options_t parse_options(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
     
-    while ((opt = getopt_long(argc, argv, "i:o:h", 
+    while ((opt = getopt_long(argc, argv, "i:8:4:6:o:h",
                               long_options, &option_index)) != -1) {
         switch (opt) {
             case 'i':
@@ -205,6 +205,7 @@ options_t parse_options(int argc, char *argv[]) {
     
     return opts;
 }
+
 
 int main(int argc, char *argv[]) {
     options_t opts = parse_options(argc, argv);
