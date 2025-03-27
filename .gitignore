@@ -1,4 +1,10 @@
 *.rom
 *.bin
 fontupdate
+encode
+addchecksum
+zametki
+*.o
 *.fnt
+*.dat
+*.hex

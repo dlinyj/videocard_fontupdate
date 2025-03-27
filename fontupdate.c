@@ -8,8 +8,6 @@
 #include <string.h>
 #include <stdint.h>
 
-#define __DEBUG__
-
 #define DEFAULT_OUTPUT "upd.rom"
 
 // Размеры шрифтов в байтах
