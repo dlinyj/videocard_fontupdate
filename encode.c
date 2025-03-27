@@ -95,7 +95,12 @@ int main(int argc, char *argv[]) {
     }
     
     lseek(out_fd, filesize-1, SEEK_SET);
-    write(out_fd, "\0", 1);
+    if (write(out_fd, "\0", 1) != 1) {
+        perror("Error writing to output file");
+        close(in_fd);
+        close(out_fd);
+        exit(1);
+    }
     lseek(out_fd, 0, SEEK_SET);
 
     in_file_memory = mmap(0, filesize, PROT_READ | PROT_WRITE, MAP_SHARED, in_fd, 0);

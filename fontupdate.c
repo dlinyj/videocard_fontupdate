@@ -255,19 +255,19 @@ int main(int argc, char *argv[]) {
     #endif
     int search_start_pos = 0;
     // Ищем шрифты по сигнатурам
-    if (opts.font_8x8 > 0) {
+    if (opts.font_8x8 != NULL) {
         font_8x8_pos = find_signature(normalized_data, filesize,
                                       FONT_8X8_SIGNATURE,
                                       sizeof(FONT_8X8_SIGNATURE), search_start_pos);
         search_start_pos = font_8x8_pos + FONT_8X8_SIZE;
     }
-    if (opts.font_8x14 > 0) {
+    if (opts.font_8x14 != NULL) {
         font_8x14_pos = find_signature(normalized_data, filesize,
                                        FONT_8X14_SIGNATURE,
                                        sizeof(FONT_8X14_SIGNATURE), search_start_pos);
         search_start_pos = font_8x14_pos + FONT_8X14_SIZE;
     }
-    if (opts.font_8x16 > 0) {
+    if (opts.font_8x16 != NULL) {
         font_8x16_pos = find_signature(normalized_data, filesize,
                                        FONT_8X16_SIGNATURE,
                                        sizeof(FONT_8X16_SIGNATURE), search_start_pos);
