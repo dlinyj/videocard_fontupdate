@@ -1,45 +1,48 @@
-# Набор ПО для замены шрифтов видеокарты (EGA/VGA)
+# VGA/EGA Card Font Replacement Toolkit
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-linux-lightgrey)
 ![Version](https://img.shields.io/badge/version-1.0-blue)
 
-![Русифицированная видеокарта](img/0001.jpg)
+*Read this in other languages: [Русский](README_rus.md)*
 
-## Содержание
-- [Набор ПО для замены шрифтов видеокарты (EGA/VGA)](#набор-по-для-замены-шрифтов-видеокарты-egavga)
-- [Для чего это нужно?](#для-чего-это-нужно)
-- [Где брать шрифты?](#где-брать-шрифты)
-- [Описание программ](#описание-программ)
+![VGA card with custom fonts](img/0001.jpg)
+
+## Contents
+- [VGA/EGA Card Font Replacement Toolkit](#vgaega-card-font-replacement-toolkit)
+- [Why Do You Need This?](#why-do-you-need-this)
+- [Where to Get Fonts?](#where-to-get-fonts)
+- [Program Descriptions](#program-descriptions)
   - [fontupdate](#fontupdate)
   - [encode](#encode)
   - [addchecksum](#addchecksum)
-- [Требования](#требования)
-- [Сборка](#сборка)
-- [Совместимость](#совместимость)
-- [Устранение неполадок](#устранение-неполадок)
-- [Лицензия](#лицензия)
+- [Requirements](#requirements)
+- [Building](#building)
+- [Compatibility](#compatibility)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
-## Для чего это нужно?
-Не всегда нравятся шрифты видеокарты, либо хочется сделать так, чтобы видеокарта по умолчанию поддерживала русские шрифты. Это бывает полезно, чтобы русификатор клавиатуры не занимал место в памяти. Ниже пример загруженного шрифта со сглаженными рамками.
+## Why Do You Need This?
 
-![пример гладких рамок](img/0002.jpg)
+You might not always like the default fonts on your video card, or you may want your video card to support different character sets (like Cyrillic) by default. This can be useful to save memory that would otherwise be used by keyboard drivers and TSR programs. Below is an example of a loaded font with smooth box-drawing characters.
 
-Для модификации вам понадобится программатор, чтобы прочитать ПЗУ видеокарты и другое ПЗУ, куда можно будет залить готовый образ (например, 27С256).
+![Example of smooth box-drawing characters](img/0002.jpg)
 
-![Программатор](img/0003.jpg)
+For this modification, you'll need a programmer device to read the video card ROM and another ROM chip (like 27C256) to flash the modified image.
 
-## Где брать шрифты?
+![Programmer device](img/0003.jpg)
 
-Есть хороший [набор шрифтов DOS](http://old-dos.ru/index.php?page=files&mode=files&do=show&id=6039). Например, шрифт rkega:
+## Where to Get Fonts?
+
+There are many DOS font collections available online. For example, the rkega font:
 
 ![rkega8x16](img/rkega8x16.png)
 
-## Описание программ
+## Program Descriptions
 
 ### fontupdate
 
-Служит для автоматического обновления шрифтов по заданной сигнатуре (ищет шрифты 8х8, 8х14, 8х16) и обновляет их в зависимости от приложенного файла. Автоматически рассчитывает контрольную сумму, выходной файл годится для прошивки ПЗУ.
+This program automatically updates fonts by searching for specific signatures (8x8, 8x14, and 8x16 fonts) and updates them based on the provided font files. It automatically calculates the checksum, and the output file is ready for flashing to ROM.
 
 ```bash
 ./fontupdate 
@@ -58,7 +61,7 @@ Options:
 If any font file is not specified, that font will not be replaced.
 ```
 
-Пример использования:
+Example usage:
 
 ``` bash
 
@@ -66,37 +69,37 @@ If any font file is not specified, that font will not be replaced.
 
 ```
 
-где:
+Where:
 
-* **tvga9000i-D4.01E.bin** - образ ПЗУ снятый программатором
-* **rkega-\*x\*.fnt** - файлы шрифтов на прошивку
-* **tvga9000i-D4.01E_RUS.bin** - русифицированный образ готовый к прошивке
+* **tvga9000i-D4.01E.bin** - ROM image read from the programmer
+* **rkega-\*x\*.fnt** - font files to be flashed
+* **tvga9000i-D4.01E_RUS.bin** - modified ROM image ready for flashing
 
-Если программа собрана с отладочными параметрами, то ещё на выходе будет два файла:
+If the program is compiled with debug parameters (make debug), it will also output two additional files:
 
-* **normalize.dat** - прошивка после нормализации последовательности байт (считанная с ПЗУ)
-* **fnt_updated.dat** - прошивка с обновлёнными  шрифтами, до перестановки последовательности байт (не готова к прошивке)
+* **normalize.dat** - ROM image after byte sequence normalization
+* **fnt_updated.dat** - ROM image with updated fonts, before byte reordering (not ready for flashing)
 
-Бывает полезно посмотреть hex-редактором для понимания проблем или ручных доработок.
+These files can be useful to examine with a hex editor for troubleshooting or manual modifications.
 
 ### encode 
 
-По историческим причинам сложилось, что байты в ПЗУ видеокарты идут следующим образом: нулевой байт идёт по нулевому адресу, первый байт (нечётный) по адресу 0x4000, второй байт по адресу 0x0001, третий по адресу 0x4001. Работать с таким образом неудобно, поэтому служит программа перекодировщик.
-Схема расположения байт в ПЗУ:
+For historical reasons, bytes in video card ROMs are arranged in a specific way: the even bytes (0, 2, 4, etc.) are at addresses starting from 0x0000, while odd bytes (1, 3, 5, etc.) are at addresses starting from 0x4000. This program helps convert between this format and a sequential format.
+Byte layout in ROM:
 
 ```
-Адрес:   0x0000  0x0001  0x0002  ...  0x4000  0x4001  0x4002  ...
-Данные:  байт 0  байт 2  байт 4  ...  байт 1  байт 3  байт 5  ...
+Address:  0x0000  0x0001  0x0002  ...  0x4000  0x4001  0x4002  ...
+Data:     byte 0  byte 2  byte 4  ...  byte 1  byte 3  byte 5  ...
 ```
 
-После нормализации:
+After normalization:
 
 ```
-Адрес:   0x0000  0x0001  0x0002  0x0003  0x0004  0x0005  ...
-Данные:  байт 0  байт 1  байт 2  байт 3  байт 4  байт 5  ...
+Address:  0x0000  0x0001  0x0002  0x0003  0x0004  0x0005  ...
+Data:     byte 0  byte 1  byte 2  byte 3  byte 4  byte 5  ...
 
 ```
-
+Example of use:
 
 ``` bash
 
@@ -116,85 +119,87 @@ Examples:
   ./encode -m norm.bin -o font_to_rom.bin
 ```
 
-* Опция -n перевод в читаемый формат.
-* Опция -m перевод в формат для записи в ПЗУ.
+* Option -n converts from ROM format to a readable sequential format.
+* Option -m converts from sequential format to ROM format for flashing.
 
 ### addchecksum
 
-Рассчитывает контрольную сумму и добавляет в конце вложенного файла байт контрольной суммы. Использует стандартный алгоритм суммирования всех байтов образа, при котором итоговая сумма должна быть равна 0.
+Calculates the checksum and adds it to the end of the file. It uses the standard algorithm for summing all bytes in the image, where the final sum should equal 0.
 
 ``` bash
 Usage: ./addchecksum <rom_file>
 ```
 
-## Сборка
+## Requirements
 
-Для компиляции и использования программ вам понадобится:
+To compile and use these programs, you'll need:
 
 * GCC (GNU Compiler Collection)
 * Make
-* Программатор для чтения/записи ПЗУ
-* Hex-редактор (опционально, для ручной работы с файлами)
+* ROM programmer for reading/writing ROM chips
+* Hex editor (optional, for manual work with files)
 
-## Сборка
+## Building
 
-Собирается просто командой:
+Build the project with a simple command:
 
 ``` bash
 make
 ```
 
-Если нужно больше отладочных файлов, то можно собрать с отладочной информацией
+If you need more debug information, build with:
 
 ``` bash
 make debug
 ```
 
-Для очистки проекта от скомпилированных файлов:
+To clean compiled files from the project:
 
 ``` bash
 make clean
 ```
 
-##Совместимость
-Программы тестировались на следующих видеокартах:
+## Compatibility
+
+These programs have been tested with the following video cards:
 
 * Trident TVGA9000i
 * Cirrus Logic GD5422
 
-Если у вас есть успешный опыт использования с другими моделями, пожалуйста, создайте issue или pull request с информацией.
+If you have successfully used this toolkit with other models, please create an issue or pull request with the information.
 
-## Устранение неполадок
-### Проблема: Шрифты не отображаются после прошивки
-#### Возможные причины:
 
-* Неверно определены адреса шрифтов в ROM
-* Неправильный формат файлов шрифтов
+## Troubleshooting
+### Problem: Fonts don't display after flashing
+#### Possible causes:
 
-#### Решение:
-Проверьте формат файлов шрифтов (должен быть двоичный без заголовков). Попробуйте вручную найти сигнатуры шрифтов в образе ROM с помощью hex-редактора и указать их расположение.
+* Incorrectly identified font addresses in the ROM
+* Incorrect font file format
 
-### Проблема: Ошибка контрольной суммы
-#### Возможные причины:
+#### Solution:
+Check the format of your font files (they should be binary without headers). Try manually finding font signatures in the ROM image using a hex editor and specify their locations.
 
-* Повреждение файла ROM
-* Неправильный размер файла
+### Problem: Checksum error
+#### Possible causes:
 
-#### Решение:
-Убедитесь, что размер ROM соответствует ожидаемому (обычно 32KB или 64KB). Запустите addchecksum на файле перед прошивкой.
+* Corrupted ROM file
+* Incorrect file size
 
-### Проблема: Программа не находит шрифты
-#### Возможные причины:
+#### Solution:
+Make sure the ROM size matches the expected size (typically 32KB or 64KB). Run addchecksum on the file before flashing.
 
-* Нестандартный BIOS видеокарты
-* Измененные сигнатуры шрифтов
+### Problem: Program can't find fonts
+#### Possible causes:
 
-#### Решение:
-Соберите программу в режиме отладки (make debug) и проверьте файл normalize.dat в hex-редакторе, чтобы вручную найти расположение шрифтов.
+* Non-standard BIOS on the video card
+* Modified font signatures
 
-## Лицензия
+#### Solution:
+Compile the program in debug mode (make debug) and check the normalize.dat file in a hex editor to manually locate the fonts.
 
-Этот проект распространяется под лицензией MIT. Эта лицензия позволяет использовать, копировать, изменять и распространять код в любых целях, включая коммерческие, при условии сохранения уведомления об авторских правах и отказа от ответственности. Полный текст лицензии:
+## License
+
+This project is distributed under the MIT License. This license allows use, copying, modification, and distribution of the code for any purpose, including commercial use, provided that the copyright notice and disclaimer are preserved. Full license text:
 ```
 MIT License
 
