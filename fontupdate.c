@@ -51,6 +51,7 @@ int save_tmp_debfile(char * filename, int filesize, unsigned char *data){
         return 1;
     }
     close(fd);
+    return 0;
 }
 
 #endif //__DEBUG__
