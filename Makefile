@@ -5,7 +5,7 @@ CFLAGS = -Wall -Wextra -O2
 LDFLAGS = 
 
 # Целевые исполняемые файлы
-TARGETS = encode addchecksum fontupdate
+TARGETS = encode addchecksum fontupdate pattern_replace dos_font_viewer
 
 # Правило по умолчанию
 all: $(TARGETS)
@@ -16,6 +16,14 @@ encode: encode.c
 
 # Правило для компиляции addchecksum
 addchecksum: addchecksum.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+# Правило для компиляции pattern_replace
+pattern_replace: pattern_replace.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+# Правило для компиляции dos_font_viewer
+dos_font_viewer: dos_font_viewer.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # Правило для компиляции fontupdate
