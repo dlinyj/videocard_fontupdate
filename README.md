@@ -16,6 +16,8 @@
   - [fontupdate](#fontupdate)
   - [encode](#encode)
   - [addchecksum](#addchecksum)
+  - [dos_font_viewer](#dos_font_viewer)
+  - [pattern_replace](#pattern_replace)
 - [Requirements](#requirements)
 - [Building](#building)
 - [Compatibility](#compatibility)
@@ -61,7 +63,7 @@ Options:
 If any font file is not specified, that font will not be replaced.
 ```
 
-Example usage:
+#### Example usage:
 
 ``` bash
 
@@ -99,7 +101,7 @@ Address:  0x0000  0x0001  0x0002  0x0003  0x0004  0x0005  ...
 Data:     byte 0  byte 1  byte 2  byte 3  byte 4  byte 5  ...
 
 ```
-Example of use:
+#### Example of use:
 
 ``` bash
 
@@ -129,6 +131,119 @@ Calculates the checksum and adds it to the end of the file. It uses the standard
 ``` bash
 Usage: ./addchecksum <rom_file>
 ```
+### dos_font_viewer
+
+A module for viewing and exporting individual DOS font characters in the Linux console.
+
+#### Features
+
+- Visualization of DOS font characters (8×16) in the console using Unicode blocks
+- Export characters in various formats:
+  - ASCII art (text format)
+  - Binary data (original font format)
+  - C array (ready for inclusion in source code)
+- Support for all 256 characters in the standard DOS character table
+
+#### Usage
+
+```bash
+# View character with code 65 (letter 'A')
+./dos_font_viewer /path/to/font_file 65
+
+# Save character as a text file (ASCII art)
+./dos_font_viewer /path/to/font_file 65 save txt
+
+# Save character in binary format
+./dos_font_viewer /path/to/font_file 65 save bin
+
+# Save character as a C array
+./dos_font_viewer /path/to/font_file 65 save c
+```
+
+#### Export Formats
+
+- _txt_ (default) — ASCII art using # for filled pixels and . for empty ones
+- _bin_ — 16 bytes of character data in the original binary format
+- _c_ — C array with comments, ready for inclusion in source code
+
+#### Output Example
+
+Character with code 65 (letter 'A') looks like this:
+
+```
+Character: 65 (0x41)
+        
+        
+   ██   
+  █  █  
+ █    █ 
+ █    █ 
+ ██████ 
+ █    █ 
+ █    █ 
+ █    █ 
+ █    █ 
+        
+        
+        
+        
+        
+```
+
+### pattern_replace
+
+Binary Pattern Replace is a command-line utility that searches for binary patterns in files and replaces them with other patterns. The tool can either modify files in-place or create a new output file with the replacements.
+
+#### Использование
+
+``` bash
+./pattern_replace source.bin find_pattern.bin replace_pattern.bin [output.bin]
+```
+
+#### Parameters:
+
+* source.bin - The source binary file where the search and replace operation will be performed
+* find_pattern.bin - A binary file containing the pattern to search for
+* replace_pattern.bin - A binary file containing the pattern to replace with
+* output.bin - (Optional) The output file where the result will be written
+
+#### Operation Modes:
+
+1.In-place replacement (3 arguments):
+
+``` bash
+./pattern_replace source.bin find_pattern.bin replace_pattern.bin
+```
+
+The source file will be modified directly.
+
+2. Output to new file (4 arguments):
+
+``` bash
+./pattern_replace source.bin find_pattern.bin replace_pattern.bin output.bin
+```
+
+The source file remains unchanged, and the result is written to the output file.
+
+#### Examples
+
+Replace all occurrences of a specific byte sequence in a binary file:
+
+``` bash
+text./pattern_replace firmware.bin old_signature.bin new_signature.bin
+```
+
+Search for a pattern in a file and write the result to a new file:
+
+``` bash
+text./pattern_replace original.dat pattern.bin replacement.bin modified.dat
+```
+
+#### Notes
+
+* The replacement pattern can be of a different size than the search pattern, which will change the size of the output file.
+* The utility reports the number of patterns replaced upon completion.
+* If the search pattern is not found, the output file will be identical to the source file.
 
 ## Requirements
 
