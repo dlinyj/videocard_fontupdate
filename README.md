@@ -230,13 +230,13 @@ The source file remains unchanged, and the result is written to the output file.
 Replace all occurrences of a specific byte sequence in a binary file:
 
 ``` bash
-text./pattern_replace firmware.bin old_signature.bin new_signature.bin
+./pattern_replace firmware.bin old_signature.bin new_signature.bin
 ```
 
 Search for a pattern in a file and write the result to a new file:
 
 ``` bash
-text./pattern_replace original.dat pattern.bin replacement.bin modified.dat
+./pattern_replace original.dat pattern.bin replacement.bin modified.dat
 ```
 
 #### Notes

@@ -35,7 +35,7 @@ fontupdate_debug: fontupdate.c
 	$(CC) $(CFLAGS) -D__DEBUG__ -o fontupdate $< $(LDFLAGS)
 
 # Цель для отладочной сборки
-debug: encode addchecksum fontupdate_debug
+debug: encode addchecksum fontupdate_debug pattern_replace dos_font_viewer
 
 # Очистка проекта
 clean:
