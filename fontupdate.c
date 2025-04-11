@@ -256,9 +256,19 @@ options_t parse_options(int argc, char *argv[]) {
 }
 
 static int *parse_char_codes(const char *chars_str, int *count) {
+    if (!chars_str || !count) {
+        fprintf(stderr, "Invalid parameters for parse_char_codes\n");
+        return NULL;
+    }
+
     char *str_copy = strdup(chars_str);
+    if (!str_copy) {
+        fprintf(stderr, "Memory allocation error in parse_char_codes\n");
+        return NULL;
+    }
+
     char *token, *subtoken;
-    char *saveptr1, *saveptr2;
+    char *saveptr1 = NULL, *saveptr2 = NULL;
     int *codes = NULL;
     int capacity = 0;
     *count = 0;
@@ -269,47 +279,91 @@ static int *parse_char_codes(const char *chars_str, int *count) {
         if (strchr(token, '-')) {
             int start, end;
             subtoken = strtok_r(token, "-", &saveptr2);
+            if (!subtoken) continue;
             start = atoi(subtoken);
+
             subtoken = strtok_r(NULL, "-", &saveptr2);
+            if (!subtoken) continue;
             end = atoi(subtoken);
+
+            if (start < 0) start = 0;
+            if (end > 255) end = 255;
+            if (start > end) continue;
 
             // Добавляем все символы из диапазона
             for (int i = start; i <= end; i++) {
                 if (*count >= capacity) {
                     capacity = capacity ? capacity * 2 : 16;
-                    codes = realloc(codes, capacity * sizeof(int));
+                    int *new_codes = realloc(codes, capacity * sizeof(int));
+                    if (!new_codes) {
+                        fprintf(stderr, "Memory allocation error in parse_char_codes\n");
+                        free(codes);
+                        free(str_copy);
+                        return NULL;
+                    }
+                    codes = new_codes;
                 }
                 codes[(*count)++] = i;
             }
         } else {
             // Добавляем один символ
+            int code = atoi(token);
+            if (code < 0 || code > 255) continue;
+
             if (*count >= capacity) {
                 capacity = capacity ? capacity * 2 : 16;
-                codes = realloc(codes, capacity * sizeof(int));
+                int *new_codes = realloc(codes, capacity * sizeof(int));
+                if (!new_codes) {
+                    fprintf(stderr, "Memory allocation error in parse_char_codes\n");
+                    free(codes);
+                    free(str_copy);
+                    return NULL;
+                }
+                codes = new_codes;
             }
-            codes[(*count)++] = atoi(token);
+            codes[(*count)++] = code;
         }
     }
 
     free(str_copy);
+
+    // Если не нашли ни одного кода, возвращаем NULL
+    if (*count == 0) {
+        free(codes);
+        return NULL;
+    }
+
     return codes;
 }
 
+
 static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
-                             uint8_t *font_data, int font_offset,
+                             uint8_t *font_data, size_t font_offset,
                              int *char_codes, int code_count) {
     int replacements = 0;
+
+    if (!rom_data || !font_data || !char_codes || rom_size < font_offset + 256 * 16) {
+        fprintf(stderr, "Invalid parameters for fix_duplicate_chars\n");
+        return -1;
+    }
 
     // Для каждого символа из списка
     for (int i = 0; i < code_count; i++) {
         int char_code = char_codes[i];
+        if (char_code < 0 || char_code > 255) {
+            fprintf(stderr, "Invalid character code: %d\n", char_code);
+            continue;
+        }
+
         // Получаем указатель на патерн символа в основном шрифте
         uint8_t *pattern = &font_data[font_offset + char_code * 16];
 
+        printf("Searching for duplicates of char %d (0x%02X)...\n", char_code, char_code);
+
         // Ищем этот патерн по всему образу ПЗУ, исключая основную таблицу шрифтов
-        for (size_t offset = 0; offset < rom_size - 16; offset++) {
+        for (size_t offset = 0; offset <= rom_size - 16; offset++) {
             // Пропускаем основную таблицу шрифтов
-            if (offset >= (size_t)font_offset && offset < (size_t)пеfont_offset + 256 * 16) {
+            if (offset >= font_offset && offset < font_offset + 256 * 16) {
                 continue;
             }
 
@@ -317,8 +371,7 @@ static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
             if (memcmp(&rom_data[offset], pattern, 16) == 0) {
                 // Нашли дублирующийся патерн, заменяем его
                 memcpy(&rom_data[offset], pattern, 16);
-                printf("Found duplicate of char %d (0x%02X) at offset 0x%zX, replaced\n",
-                       char_code, char_code, offset);
+                printf("  Found duplicate at offset 0x%zX, replaced\n", offset);
                 replacements++;
             }
         }
@@ -326,6 +379,7 @@ static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
 
     return replacements;
 }
+
 
 
 int main(int argc, char *argv[]) {
@@ -466,21 +520,22 @@ int main(int argc, char *argv[]) {
             int copy_size = (font_size < FONT_8X16_SIZE) ? font_size : FONT_8X16_SIZE;
             memcpy(normalized_data + font_8x16_offset, font_data, copy_size);
 
-            free(font_data);
+
         }
-        // Если включена опция поиска дубликатов и шрифт был заменен
-        if (opts.fix_duplicates) {
-            int count;
-            int *char_codes = parse_char_codes(opts.duplicate_chars, &count);
-            if (char_codes) {
-                printf("Searching for duplicate 8x16 characters...\n");
-                int fixed = fix_duplicate_chars(normalized_data, filesize,
-                                              font_data, font_8x16_offset,
-                                              char_codes, count);
-                printf("Fixed %d duplicate character patterns\n", fixed);
-                free(char_codes);
+            // Если включена опция поиска дубликатов и шрифт был заменен
+            if (opts.fix_duplicates) {
+                int count;
+                int *char_codes = parse_char_codes(opts.duplicate_chars, &count);
+                if (char_codes) {
+                    printf("Searching for duplicate 8x16 characters...\n");
+                    int fixed = fix_duplicate_chars(normalized_data, filesize,
+                                                  font_data, font_8x16_offset,
+                                                  char_codes, count);
+                    printf("Fixed %d duplicate character patterns\n", fixed);
+                    free(char_codes);
+                }
             }
-        }
+        free(font_data);
     }
     #ifdef __DEBUG__
     save_tmp_debfile("fnt_updated.dat", filesize, normalized_data);
