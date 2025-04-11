@@ -36,6 +36,8 @@ typedef struct {
     char *font_8x16;
     char *output_rom;
     char *save_pattern;
+    int fix_duplicates;  // Флаг для включения функции поиска дубликатов
+    char *duplicate_chars; // Строка с кодами символов, например "140,141,240-255"
 } options_t;
 
 #ifdef __DEBUG__
@@ -183,6 +185,8 @@ void print_help() {
     printf("  -6, --f16 <file>     8x16 font file\n");
     printf("  -o, --output <file>  Output ROM file (default: %s)\n", DEFAULT_OUTPUT);
     printf("  -s, --save[=pattern] Save original fonts with optional name pattern\n");
+    printf("  -d, --fix-duplicates Search and fix duplicate character patterns\n");
+    printf("  -c, --duplicate-chars <s> Specify character codes to check (default: 140,141,240-255)\n");
     printf("  -h, --help           Display this help message\n\n");
     printf("If any font file is not specified, that font will not be replaced.\n");
     exit(0);
@@ -204,12 +208,14 @@ options_t parse_options(int argc, char *argv[]) {
         {"f16",     required_argument, 0, '6'},
         {"output",  required_argument, 0, 'o'},
         {"save",    optional_argument, 0, 's'},
+        {"fix-duplicates", no_argument, 0, 'd'},
+        {"duplicate-chars", required_argument, 0, 'c'},
         {"help",    no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
     int opt;
     int option_index = 0;
-    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:s::h",
+    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:s:dc:h",
                               long_options, &option_index)) != -1) {
         switch (opt) {
             case 'i':
@@ -230,6 +236,12 @@ options_t parse_options(int argc, char *argv[]) {
             case 's':
                 opts.save_pattern = optarg ? optarg : "";
                 break;
+            case 'd':
+                opts.fix_duplicates = 1;
+                break;
+            case 'c':
+                opts.duplicate_chars = optarg;
+                break;
             case 'h':
             default:
                 print_help();
@@ -241,6 +253,78 @@ options_t parse_options(int argc, char *argv[]) {
         print_help();
     }
     return opts;
+}
+
+static int *parse_char_codes(const char *chars_str, int *count) {
+    char *str_copy = strdup(chars_str);
+    char *token, *subtoken;
+    char *saveptr1, *saveptr2;
+    int *codes = NULL;
+    int capacity = 0;
+    *count = 0;
+
+    // Разбиваем строку по запятым
+    for (token = strtok_r(str_copy, ",", &saveptr1); token; token = strtok_r(NULL, ",", &saveptr1)) {
+        // Проверяем, есть ли диапазон (символ '-')
+        if (strchr(token, '-')) {
+            int start, end;
+            subtoken = strtok_r(token, "-", &saveptr2);
+            start = atoi(subtoken);
+            subtoken = strtok_r(NULL, "-", &saveptr2);
+            end = atoi(subtoken);
+
+            // Добавляем все символы из диапазона
+            for (int i = start; i <= end; i++) {
+                if (*count >= capacity) {
+                    capacity = capacity ? capacity * 2 : 16;
+                    codes = realloc(codes, capacity * sizeof(int));
+                }
+                codes[(*count)++] = i;
+            }
+        } else {
+            // Добавляем один символ
+            if (*count >= capacity) {
+                capacity = capacity ? capacity * 2 : 16;
+                codes = realloc(codes, capacity * sizeof(int));
+            }
+            codes[(*count)++] = atoi(token);
+        }
+    }
+
+    free(str_copy);
+    return codes;
+}
+
+static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
+                             uint8_t *font_data, int font_offset,
+                             int *char_codes, int code_count) {
+    int replacements = 0;
+
+    // Для каждого символа из списка
+    for (int i = 0; i < code_count; i++) {
+        int char_code = char_codes[i];
+        // Получаем указатель на патерн символа в основном шрифте
+        uint8_t *pattern = &font_data[font_offset + char_code * 16];
+
+        // Ищем этот патерн по всему образу ПЗУ, исключая основную таблицу шрифтов
+        for (size_t offset = 0; offset < rom_size - 16; offset++) {
+            // Пропускаем основную таблицу шрифтов
+            if (offset >= (size_t)font_offset && offset < (size_t)пеfont_offset + 256 * 16) {
+                continue;
+            }
+
+            // Сравниваем патерн
+            if (memcmp(&rom_data[offset], pattern, 16) == 0) {
+                // Нашли дублирующийся патерн, заменяем его
+                memcpy(&rom_data[offset], pattern, 16);
+                printf("Found duplicate of char %d (0x%02X) at offset 0x%zX, replaced\n",
+                       char_code, char_code, offset);
+                replacements++;
+            }
+        }
+    }
+
+    return replacements;
 }
 
 
@@ -383,6 +467,19 @@ int main(int argc, char *argv[]) {
             memcpy(normalized_data + font_8x16_offset, font_data, copy_size);
 
             free(font_data);
+        }
+        // Если включена опция поиска дубликатов и шрифт был заменен
+        if (opts.fix_duplicates) {
+            int count;
+            int *char_codes = parse_char_codes(opts.duplicate_chars, &count);
+            if (char_codes) {
+                printf("Searching for duplicate 8x16 characters...\n");
+                int fixed = fix_duplicate_chars(normalized_data, filesize,
+                                              font_data, font_8x16_offset,
+                                              char_codes, count);
+                printf("Fixed %d duplicate character patterns\n", fixed);
+                free(char_codes);
+            }
         }
     }
     #ifdef __DEBUG__
