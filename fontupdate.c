@@ -35,6 +35,7 @@ typedef struct {
     char *font_8x14;
     char *font_8x16;
     char *output_rom;
+    char *save_pattern;
 } options_t;
 
 #ifdef __DEBUG__
@@ -129,6 +130,33 @@ unsigned char *load_font_file(const char *filename, int *size) {
     return data;
 }
 
+static int save_font(uint8_t *font_data, size_t font_size, const char *pattern, const char *size_suffix) {
+    char filename[256];
+    // Формируем имя файла
+    if (pattern && *pattern) {
+        snprintf(filename, sizeof(filename), "%s%s.fnt", pattern, size_suffix);
+    } else {
+        snprintf(filename, sizeof(filename), "%s.fnt", size_suffix);
+    }
+
+    FILE *f = fopen(filename, "wb");
+    if (!f) {
+        fprintf(stderr, "Error: Unable to create file %s\n", filename);
+        return -1;
+    }
+
+    size_t written = fwrite(font_data, 1, font_size, f);
+    fclose(f);
+
+    if (written != font_size) {
+        fprintf(stderr, "Error: Failed to write all data to %s\n", filename);
+        return -1;
+    }
+
+    printf("Original font saved to %s\n", filename);
+    return 0;
+}
+
 // Функция для обновления контрольной суммы ROM
 void update_checksum(unsigned char *data, int size) {
     // Расчет контрольной суммы BIOS
@@ -149,12 +177,13 @@ void print_help() {
     printf("Usage: fontupdate [OPTIONS]\n");
     printf("Update fonts in VGA BIOS ROM files.\n\n");
     printf("Options:\n");
-    printf("  -i, --input <file>  Input ROM file (required)\n");
-    printf("  -8, --f8 <file>     8x8 font file\n");
-    printf("  -4, --f14 <file>    8x14 font file\n");
-    printf("  -6, --f16 <file>    8x16 font file\n");
-    printf("  -o, --output <file> Output ROM file (default: %s)\n", DEFAULT_OUTPUT);
-    printf("  -h, --help          Display this help message\n\n");
+    printf("  -i, --input <file>   Input ROM file (required)\n");
+    printf("  -8, --f8 <file>      8x8 font file\n");
+    printf("  -4, --f14 <file>     8x14 font file\n");
+    printf("  -6, --f16 <file>     8x16 font file\n");
+    printf("  -o, --output <file>  Output ROM file (default: %s)\n", DEFAULT_OUTPUT);
+    printf("  -s, --save[=pattern] Save original fonts with optional name pattern\n");
+    printf("  -h, --help           Display this help message\n\n");
     printf("If any font file is not specified, that font will not be replaced.\n");
     exit(0);
 }
@@ -174,12 +203,13 @@ options_t parse_options(int argc, char *argv[]) {
         {"f14",     required_argument, 0, '4'},
         {"f16",     required_argument, 0, '6'},
         {"output",  required_argument, 0, 'o'},
+        {"save",    optional_argument, 0, 's'},
         {"help",    no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
     int opt;
     int option_index = 0;
-    while ((opt = getopt_long(argc, argv, "i:8:4:6:o:h",
+    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:s::h",
                               long_options, &option_index)) != -1) {
         switch (opt) {
             case 'i':
@@ -196,6 +226,9 @@ options_t parse_options(int argc, char *argv[]) {
                 break;
             case 'o':
                 opts.output_rom = optarg;
+                break;
+            case 's':
+                opts.save_pattern = optarg ? optarg : "";
                 break;
             case 'h':
             default:
@@ -216,7 +249,7 @@ int main(int argc, char *argv[]) {
     struct stat st;
     int filesize;
     unsigned char *rom_data, *normalized_data;
-    int font_8x8_pos = -1, font_8x14_pos = -1, font_8x16_pos = -1;
+    int font_8x8_offset = -1, font_8x14_offset = -1, font_8x16_offset = -1;
     // Получаем размер входного файла
     if (stat(opts.input_rom, &st) != 0) {
         perror("Error getting input file size");
@@ -254,38 +287,52 @@ int main(int argc, char *argv[]) {
     #ifdef __DEBUG__
     save_tmp_debfile("normalize.dat", filesize, normalized_data);
     #endif
-    int search_start_pos = 0;
+    int search_start_offset = 0;
     // Ищем шрифты по сигнатурам
-    font_8x8_pos = find_signature(normalized_data, filesize,
+    font_8x8_offset = find_signature(normalized_data, filesize,
                                       FONT_8X8_SIGNATURE,
-                                      sizeof(FONT_8X8_SIGNATURE), search_start_pos);
-    if (font_8x8_pos) {
-        search_start_pos = font_8x8_pos + FONT_8X8_SIZE;
+                                      sizeof(FONT_8X8_SIGNATURE), search_start_offset);
+    if (font_8x8_offset) {
+        search_start_offset = font_8x8_offset + FONT_8X8_SIZE;
     }
-    font_8x14_pos = find_signature(normalized_data, filesize,
+    font_8x14_offset = find_signature(normalized_data, filesize,
                                        FONT_8X14_SIGNATURE,
-                                       sizeof(FONT_8X14_SIGNATURE), search_start_pos);
-    if (font_8x14_pos) {
-        search_start_pos = font_8x14_pos + FONT_8X14_SIZE;
+                                       sizeof(FONT_8X14_SIGNATURE), search_start_offset);
+    if (font_8x14_offset) {
+        search_start_offset = font_8x14_offset + FONT_8X14_SIZE;
     }
-    font_8x16_pos = find_signature(normalized_data, filesize,
+    font_8x16_offset = find_signature(normalized_data, filesize,
                                        FONT_8X16_SIGNATURE,
-                                       sizeof(FONT_8X16_SIGNATURE), search_start_pos);
+                                       sizeof(FONT_8X16_SIGNATURE), search_start_offset);
 
     printf("Font positions found:\n");
     printf("  8x8:  %s (0x%X)\n",
-           font_8x8_pos >= 0 ? "Found" : "Not found",
-           font_8x8_pos);
+           font_8x8_offset >= 0 ? "Found" : "Not found",
+           font_8x8_offset);
     printf("  8x14: %s (0x%X)\n",
-           font_8x14_pos >= 0 ? "Found" : "Not found",
-           font_8x14_pos);
+           font_8x14_offset >= 0 ? "Found" : "Not found",
+           font_8x14_offset);
     printf("  8x16: %s (0x%X)\n",
-           font_8x16_pos >= 0 ? "Found" : "Not found",
-           font_8x16_pos);
+           font_8x16_offset >= 0 ? "Found" : "Not found",
+           font_8x16_offset);
+
+    if ((font_8x8_offset >= 0) && (opts.save_pattern != NULL))  {
+        save_font(normalized_data + font_8x8_offset, 256 * 8, opts.save_pattern, "8x8");
+    }
+
+    if ((font_8x14_offset >= 0) && (opts.save_pattern != NULL)) {
+        save_font(normalized_data + font_8x14_offset, 256 * 14, opts.save_pattern, "8x14");
+    }
+
+    if  ((font_8x16_offset >= 0) && (opts.save_pattern != NULL)) {
+        save_font(normalized_data + font_8x16_offset, 256 * 16, opts.save_pattern, "8x16");
+    }
+
 
     // Заменяем шрифты, если указаны
-    if (opts.font_8x8 && font_8x8_pos >= 0) {
+    if (opts.font_8x8 && font_8x8_offset >= 0) {
         int font_size;
+
         unsigned char *font_data = load_font_file(opts.font_8x8, &font_size);
             if (font_data) {
             printf("Replacing 8x8 font from %s\n", opts.font_8x8);
@@ -298,12 +345,12 @@ int main(int argc, char *argv[]) {
 
             // Копируем шрифт в ROM
             int copy_size = (font_size < FONT_8X8_SIZE) ? font_size : FONT_8X8_SIZE;
-            memcpy(normalized_data + font_8x8_pos, font_data, copy_size);
+            memcpy(normalized_data + font_8x8_offset, font_data, copy_size);
 
             free(font_data);
         }
     }
-    if (opts.font_8x14 && font_8x14_pos >= 0) {
+    if (opts.font_8x14 && font_8x14_offset >= 0) {
         int font_size;
         unsigned char *font_data = load_font_file(opts.font_8x14, &font_size);
             if (font_data) {
@@ -315,12 +362,12 @@ int main(int argc, char *argv[]) {
             }
                     // Копируем шрифт в ROM
             int copy_size = (font_size < FONT_8X14_SIZE) ? font_size : FONT_8X14_SIZE;
-            memcpy(normalized_data + font_8x14_pos, font_data, copy_size);
+            memcpy(normalized_data + font_8x14_offset, font_data, copy_size);
 
             free(font_data);
         }
     }
-    if (opts.font_8x16 && font_8x16_pos >= 0) {
+    if (opts.font_8x16 && font_8x16_offset >= 0) {
         int font_size;
         unsigned char *font_data = load_font_file(opts.font_8x16, &font_size);
             if (font_data) {
@@ -333,7 +380,7 @@ int main(int argc, char *argv[]) {
 
             // Копируем шрифт в ROM
             int copy_size = (font_size < FONT_8X16_SIZE) ? font_size : FONT_8X16_SIZE;
-            memcpy(normalized_data + font_8x16_pos, font_data, copy_size);
+            memcpy(normalized_data + font_8x16_offset, font_data, copy_size);
 
             free(font_data);
         }

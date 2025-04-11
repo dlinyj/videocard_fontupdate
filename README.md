@@ -53,12 +53,13 @@ Usage: fontupdate [OPTIONS]
 Update fonts in VGA BIOS ROM files.
 
 Options:
-  -i, --input <file>  Input ROM file (required)
-  -8, --f8 <file>     8x8 font file
-  -4, --f14 <file>    8x14 font file
-  -6, --f16 <file>    8x16 font file
-  -o, --output <file> Output ROM file (default: upd.rom)
-  -h, --help          Display this help message
+  -i, --input <file>   Input ROM file (required)
+  -8, --f8 <file>      8x8 font file
+  -4, --f14 <file>     8x14 font file
+  -6, --f16 <file>     8x16 font file
+  -o, --output <file>  Output ROM file (default: upd.rom)
+  -s, --save[=pattern] Save original fonts with optional name pattern
+  -h, --help           Display this help message
 
 If any font file is not specified, that font will not be replaced.
 ```
@@ -83,6 +84,13 @@ If the program is compiled with debug parameters (make debug), it will also outp
 * **fnt_updated.dat** - ROM image with updated fonts, before byte reordering (not ready for flashing)
 
 These files can be useful to examine with a hex editor for troubleshooting or manual modifications.
+
+If you want to preserve the original fonts, you need to use the -s or --save option. You can pass a name template, like this:
+
+``` bash
+./fontupdate -i Trident_8900C_rus.bin -sTrident
+```
+This will create three files: Trident8x8.fnt, Trident8x14.fnt and Trident8x16.fnt.
 
 ### encode 
 
