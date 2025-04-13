@@ -358,6 +358,12 @@ void display_char(uint8_t *char_data) {
     }
 }
 
+void print_font_8x16(uint8_t *font_data) {
+	for (int i = 0; i < 256; i++) {
+		display_char(&font_data[i*16]);
+	}
+}
+
 static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
                               uint8_t *font_data, uint8_t *old_font, size_t font_offset,
                               int *char_codes, int code_count) {
@@ -389,7 +395,8 @@ static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
             fprintf(stderr, "Error allocation\n");
             return -1;
         }
-        uint8_t *pattern = &old_font[font_offset + char_code * 16];
+        //uint8_t *pattern = &old_font[font_offset + char_code * 16];
+        uint8_t *pattern = &old_font[char_code * 16];
 
         printf("**** Pattern **** :\n");
         display_char(pattern);
@@ -556,7 +563,8 @@ int main(int argc, char *argv[]) {
     }
     if (opts.font_8x16 && font_8x16_offset >= 0) {
         int font_size;
-        uint8_t * old_font16;
+        uint8_t *old_font16 = NULL;
+
         unsigned char *font_data = load_font_file(opts.font_8x16, &font_size);
             if (font_data) {
             printf("Replacing 8x16 font from %s\n", opts.font_8x16);
@@ -568,9 +576,18 @@ int main(int argc, char *argv[]) {
 
             // Копируем шрифт в ROM
             int copy_size = (font_size < FONT_8X16_SIZE) ? font_size : FONT_8X16_SIZE;
+
             if (opts.fix_duplicates) {
-                old_font16 = calloc(copy_size, sizeof(uint8_t));
-                memcpy(old_font16 , normalized_data + font_8x16_offset, copy_size);
+                 // Сохраняем копию старого шрифта
+                    old_font16 = malloc(256 * 16);
+                    if (!old_font16) {
+                        fprintf(stderr, "Memory allocation error\n");
+                        // Освобождаем другие ресурсы
+                        return 1;
+                    }
+                    // Копируем старый шрифт
+                    memcpy(old_font16, &normalized_data[font_8x16_offset], 256 * 16);
+                    //print_font_8x16(old_font16);
             }
 
             memcpy(normalized_data + font_8x16_offset, font_data, copy_size);
