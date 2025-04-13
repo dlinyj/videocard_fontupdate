@@ -215,6 +215,8 @@ options_t parse_options(int argc, char *argv[]) {
     };
     int opt;
     int option_index = 0;
+    opts.fix_duplicates = 0;
+    opts.duplicate_chars = "140,141,240-255"; // Значение по умолчанию
     while ((opt = getopt_long(argc, argv, "i:o:8:4:6:s:dc:h",
                               long_options, &option_index)) != -1) {
         switch (opt) {
@@ -256,6 +258,10 @@ options_t parse_options(int argc, char *argv[]) {
 }
 
 static int *parse_char_codes(const char *chars_str, int *count) {
+    printf("DEBUG: parse_char_codes called\n");
+    printf("DEBUG: chars_str = %p\n", (void*)chars_str);
+    printf("DEBUG: count = %p\n", (void*)count);
+
     if (!chars_str || !count) {
         fprintf(stderr, "Invalid parameters for parse_char_codes\n");
         return NULL;
