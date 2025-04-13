@@ -15,6 +15,8 @@
 #define FONT_8X14_SIZE   3584
 #define FONT_8X16_SIZE   4096
 
+#define REPLACE_CHARS "145,157,240-255"
+
 // Магические сигнатуры для поиска шрифтов
 const unsigned char FONT_8X8_SIGNATURE[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7E, 0x81, 0xA5, 0x81
@@ -216,7 +218,7 @@ options_t parse_options(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
     opts.fix_duplicates = 0;
-    opts.duplicate_chars = "140,141,240-255"; // Значение по умолчанию
+    opts.duplicate_chars = REPLACE_CHARS;
     while ((opt = getopt_long(argc, argv, "i:o:8:4:6:s:dc:h",
                               long_options, &option_index)) != -1) {
         switch (opt) {
@@ -342,14 +344,34 @@ static int *parse_char_codes(const char *chars_str, int *count) {
     return codes;
 }
 
+// Функция для отображения символа DOS-шрифта в консоли
+void display_char(uint8_t *char_data) {
+    for (int y = 0; y < 16; y++) {
+        for (int x = 0; x < 8; x++) {
+            if (char_data[y] & (0x80 >> x)) {
+                printf("\u2588"); // Полный блок Unicode
+            } else {
+                printf(" "); // Пробел для пустых пикселей
+            }
+        }
+        printf("\n");
+    }
+}
 
 static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
-                             uint8_t *font_data, size_t font_offset,
-                             int *char_codes, int code_count) {
+                              uint8_t *font_data, uint8_t *old_font, size_t font_offset,
+                              int *char_codes, int code_count) {
     int replacements = 0;
 
     if (!rom_data || !font_data || !char_codes || rom_size < font_offset + 256 * 16) {
         fprintf(stderr, "Invalid parameters for fix_duplicate_chars\n");
+        return -1;
+    }
+
+    // Создаем массив для отслеживания уже замененных позиций
+    uint8_t *replaced = calloc(rom_size, sizeof(uint8_t));
+    if (!replaced) {
+        fprintf(stderr, "Memory allocation error in fix_duplicate_chars\n");
         return -1;
     }
 
@@ -362,12 +384,26 @@ static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
         }
 
         // Получаем указатель на патерн символа в основном шрифте
-        uint8_t *pattern = &font_data[font_offset + char_code * 16];
+        //uint8_t *pattern = &font_data[font_offset + char_code * 16];
+        if (NULL == old_font) {
+            fprintf(stderr, "Error allocation\n");
+            return -1;
+        }
+        uint8_t *pattern = &old_font[font_offset + char_code * 16];
+
+        printf("**** Pattern **** :\n");
+        display_char(pattern);
 
         printf("Searching for duplicates of char %d (0x%02X)...\n", char_code, char_code);
 
         // Ищем этот патерн по всему образу ПЗУ, исключая основную таблицу шрифтов
+        // и уже замененные позиции
         for (size_t offset = 0; offset <= rom_size - 16; offset++) {
+            // Пропускаем, если текущая позиция уже была частью замененного символа
+            if (replaced[offset]) {
+                continue;
+            }
+
             // Пропускаем основную таблицу шрифтов
             if (offset >= font_offset && offset < font_offset + 256 * 16) {
                 continue;
@@ -379,12 +415,19 @@ static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
                 memcpy(&rom_data[offset], pattern, 16);
                 printf("  Found duplicate at offset 0x%zX, replaced\n", offset);
                 replacements++;
+
+                // Отмечаем все байты этого символа как замененные
+                for (size_t j = 0; j < 16; j++) {
+                    replaced[offset + j] = 1;
+                }
             }
         }
     }
 
+    free(replaced);
     return replacements;
 }
+
 
 
 
@@ -513,6 +556,7 @@ int main(int argc, char *argv[]) {
     }
     if (opts.font_8x16 && font_8x16_offset >= 0) {
         int font_size;
+        uint8_t * old_font16;
         unsigned char *font_data = load_font_file(opts.font_8x16, &font_size);
             if (font_data) {
             printf("Replacing 8x16 font from %s\n", opts.font_8x16);
@@ -524,6 +568,11 @@ int main(int argc, char *argv[]) {
 
             // Копируем шрифт в ROM
             int copy_size = (font_size < FONT_8X16_SIZE) ? font_size : FONT_8X16_SIZE;
+            if (opts.fix_duplicates) {
+                old_font16 = calloc(copy_size, sizeof(uint8_t));
+                memcpy(old_font16 , normalized_data + font_8x16_offset, copy_size);
+            }
+
             memcpy(normalized_data + font_8x16_offset, font_data, copy_size);
 
 
@@ -535,11 +584,12 @@ int main(int argc, char *argv[]) {
                 if (char_codes) {
                     printf("Searching for duplicate 8x16 characters...\n");
                     int fixed = fix_duplicate_chars(normalized_data, filesize,
-                                                  font_data, font_8x16_offset,
+                                                  font_data, old_font16, font_8x16_offset,
                                                   char_codes, count);
                     printf("Fixed %d duplicate character patterns\n", fixed);
                     free(char_codes);
                 }
+                free(old_font16);
             }
         free(font_data);
     }
