@@ -15,7 +15,7 @@
 #define FONT_8X14_SIZE   3584
 #define FONT_8X16_SIZE   4096
 
-#define REPLACE_CHARS "145,157,240-255"
+#define REPLACE_CHARS "128-175, 224-248, 251-253"
 
 // Магические сигнатуры для поиска шрифтов
 const unsigned char FONT_8X8_SIGNATURE[] = {
@@ -260,10 +260,6 @@ options_t parse_options(int argc, char *argv[]) {
 }
 
 static int *parse_char_codes(const char *chars_str, int *count) {
-    printf("DEBUG: parse_char_codes called\n");
-    printf("DEBUG: chars_str = %p\n", (void*)chars_str);
-    printf("DEBUG: count = %p\n", (void*)count);
-
     if (!chars_str || !count) {
         fprintf(stderr, "Invalid parameters for parse_char_codes\n");
         return NULL;
@@ -344,24 +340,59 @@ static int *parse_char_codes(const char *chars_str, int *count) {
     return codes;
 }
 
-// Функция для отображения символа DOS-шрифта в консоли
-void display_char(uint8_t *char_data) {
-    for (int y = 0; y < 16; y++) {
-        for (int x = 0; x < 8; x++) {
-            if (char_data[y] & (0x80 >> x)) {
-                printf("\u2588"); // Полный блок Unicode
+/**
+ * Отображает символ шрифта в консоли с использованием половинных блоков Unicode.
+ * Это позволяет показать символ в более компактном виде (8x8 вместо 16x16).
+ * 
+ * @param pattern Указатель на 16-байтный массив данных символа
+ */
+void display_char(const uint8_t *pattern) {
+    // Unicode-символы для половинных блоков
+    const char *upper_half_block = "\u2580"; // Верхний половинный блок ▀
+    const char *lower_half_block = "\u2584"; // Нижний половинный блок ▄
+    const char *full_block = "\u2588";      // Полный блок █
+    const char *space = " ";                // Пустое пространство
+    
+    // Верхняя рамка
+    printf("┌");
+    for (int i = 0; i < 8; i++) {
+        printf("─");
+    }
+    printf("┐\n");
+    
+    // Содержимое символа (каждые две строки объединяются в одну)
+    for (int row = 0; row < 16; row += 2) {
+        printf("│");
+        for (int bit = 7; bit >= 0; bit--) {
+            int upper = (row < 16) && (pattern[row] & (1 << bit));
+            int lower = (row + 1 < 16) && (pattern[row + 1] & (1 << bit));
+            
+            if (upper && lower) {
+                printf("%s", full_block);
+            } else if (upper) {
+                printf("%s", upper_half_block);
+            } else if (lower) {
+                printf("%s", lower_half_block);
             } else {
-                printf(" "); // Пробел для пустых пикселей
+                printf("%s", space);
             }
         }
-        printf("\n");
+        printf("│ %2d\n", row / 2);
     }
+    
+    // Нижняя граница
+    printf("└");
+    for (int i = 0; i < 8; i++) {
+        printf("─");
+    }
+    printf("┘\n");
 }
 
+
 void print_font_8x16(uint8_t *font_data) {
-	for (int i = 0; i < 256; i++) {
-		display_char(&font_data[i*16]);
-	}
+    for (int i = 0; i < 256; i++) {
+        display_char(&font_data[i*16]);
+    }
 }
 
 static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
@@ -397,10 +428,6 @@ static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
         }
         //uint8_t *pattern = &old_font[font_offset + char_code * 16];
         uint8_t *pattern = &old_font[char_code * 16];
-
-        printf("**** Pattern **** :\n");
-        display_char(pattern);
-
         printf("Searching for duplicates of char %d (0x%02X)...\n", char_code, char_code);
 
         // Ищем этот патерн по всему образу ПЗУ, исключая основную таблицу шрифтов
@@ -422,6 +449,9 @@ static int fix_duplicate_chars(uint8_t *rom_data, size_t rom_size,
                 memcpy(&rom_data[offset], pattern, 16);
                 printf("  Found duplicate at offset 0x%zX, replaced\n", offset);
                 replacements++;
+
+                printf("**** Pattern **** :\n");
+                display_char(pattern);
 
                 // Отмечаем все байты этого символа как замененные
                 for (size_t j = 0; j < 16; j++) {
@@ -597,6 +627,7 @@ int main(int argc, char *argv[]) {
             // Если включена опция поиска дубликатов и шрифт был заменен
             if (opts.fix_duplicates) {
                 int count;
+                printf("Ordinal numbers of font characters to replace:\n%s\n\n", opts.duplicate_chars);
                 int *char_codes = parse_char_codes(opts.duplicate_chars, &count);
                 if (char_codes) {
                     printf("Searching for duplicate 8x16 characters...\n");
