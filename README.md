@@ -2,7 +2,7 @@
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-linux-lightgrey)
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-1.1-blue)
 
 *Read this in other languages: [Русский](README_rus.md)*
 
@@ -57,11 +57,18 @@ Options:
   -8, --f8 <file>      8x8 font file
   -4, --f14 <file>     8x14 font file
   -6, --f16 <file>     8x16 font file
+  -d, --dosfont <file> DOS 8x16 font file for pattern matching
   -o, --output <file>  Output ROM file (default: upd.rom)
   -s, --save[=pattern] Save original fonts with optional name pattern
+  -n, --normal         Input ROM has normal (linear) font layout
   -h, --help           Display this help message
 
 If any font file is not specified, that font will not be replaced.
+By default, odd/even (interleaved) font layout is expected.
+The --dosfont option enables pattern matching: finds characters that
+differ between ROM and DOS font and replaces their occurrences elsewhere
+in the ROM before updating the main font.
+
 ```
 
 #### Example usage:
@@ -72,11 +79,37 @@ If any font file is not specified, that font will not be replaced.
 
 ```
 
+With DOS font pattern matching (for cards that dynamically reload characters):
+
+``` bash
+
+./fontupdate -i tvga9000i-D4.01E.bin -6 rkega-8x16.fnt -d dosfont_original.fnt -o tvga9000i_DOS_fixed.bin
+
+```
+
+
 Where:
 
 * **tvga9000i-D4.01E.bin** - ROM image read from the programmer
 * **rkega-\*x\*.fnt** - font files to be flashed
+* **dosfont_original.fnt** - 8x16 font saved from the same card in DOS
 * **tvga9000i-D4.01E_RUS.bin** - modified ROM image ready for flashing
+
+#### How DOS font pattern matching works:
+
+1.The program compares the 8x16 font found in ROM with the DOS font file (option -d)
+
+2. For characters that differ between these two fonts, it extracts the DOS font pattern
+
+3. It searches for these patterns throughout the entire ROM (excluding the main font area)
+
+4. Each found occurrence is replaced with the corresponding character from the new font
+
+5. Finally, the main 8x16 font is replaced with the new font
+
+This ensures that all copies of dynamically loaded characters are updated, preventing mixed fonts from appearing after flashing.
+
+#### Additional options:
 
 If the program is compiled with debug parameters (make debug), it will also output two additional files:
 
@@ -217,7 +250,7 @@ Binary Pattern Replace is a command-line utility that searches for binary patter
 
 #### Operation Modes:
 
-1.In-place replacement (3 arguments):
+1. In-place replacement (3 arguments):
 
 ``` bash
 ./pattern_replace source.bin find_pattern.bin replace_pattern.bin
@@ -298,8 +331,11 @@ If you have successfully used this toolkit with other models, please create an i
 
 * Incorrectly identified font addresses in the ROM
 * Incorrect font file format
+* Mixed fonts appear (some characters updated, others not)
 
 #### Solution:
+For mixed fonts issue, use the --dosfont option with the original font saved from the card in DOS. This will find and replace all copies of dynamically loaded characters.
+
 Check the format of your font files (they should be binary without headers). Try manually finding font signatures in the ROM image using a hex editor and specify their locations.
 
 ### Problem: Checksum error
