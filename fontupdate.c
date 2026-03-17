@@ -14,6 +14,7 @@
 #define FONT_8X8_SIZE    2048
 #define FONT_8X14_SIZE   3584
 #define FONT_8X16_SIZE   4096
+#define CHAR_SIZE_8X16   16    // размер одного символа 8x16
 
 // Магические сигнатуры для поиска шрифтов
 const uint8_t FONT_8X8_SIGNATURE[] = {
@@ -34,14 +35,14 @@ typedef struct {
     char *font_8x8;
     char *font_8x14;
     char *font_8x16;
+    char *dosfont_8x16;    // новая опция
     char *output_rom;
     char *save_pattern;
-    int is_normal;  // новая опция
+    int is_normal;
 } options_t;
 
 #ifdef __DEBUG__
-int save_tmp_debfile(char * filename, int filesize, uint8_t *data){
-    // Записываем результат
+int save_tmp_debfile(char *filename, int filesize, uint8_t *data) {
     int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1) {
         perror("Error opening output file");
@@ -58,7 +59,6 @@ int save_tmp_debfile(char * filename, int filesize, uint8_t *data){
 #endif //__DEBUG__
 
 // Функция для нормализации данных ROM
-// (из специфичного формата в последовательный)
 void odd_even_to_linear(uint8_t *in, uint8_t *out, int size) {
     for (int i = 0; i < size; i++) {
         if (i % 2) {
@@ -70,7 +70,6 @@ void odd_even_to_linear(uint8_t *in, uint8_t *out, int size) {
 }
 
 // Функция для обратного преобразования
-// (из последовательного формата в специфичный для ПЗУ)
 void linear_to_odd_even(uint8_t *in, uint8_t *out, int size) {
     for (int i = 0; i < size; i++) {
         if (i % 2) {
@@ -104,35 +103,40 @@ uint8_t *load_font_file(const char *filename, int *size) {
     struct stat st;
     int fd;
     uint8_t *data;
+
     if (stat(filename, &st) != 0) {
         perror("Error getting font file size");
         return NULL;
     }
+
     *size = st.st_size;
     fd = open(filename, O_RDONLY);
     if (fd == -1) {
         perror("Error opening font file");
         return NULL;
     }
+
     data = malloc(*size);
     if (data == NULL) {
         perror("Memory allocation failed");
         close(fd);
         return NULL;
     }
+
     if (read(fd, data, *size) != *size) {
         perror("Error reading font file");
         free(data);
         close(fd);
         return NULL;
     }
+
     close(fd);
     return data;
 }
 
 static int save_font(uint8_t *font_data, size_t font_size, const char *pattern, const char *size_suffix) {
     char filename[256];
-    // Формируем имя файла
+
     if (pattern && *pattern) {
         snprintf(filename, sizeof(filename), "%s%s.fnt", pattern, size_suffix);
     } else {
@@ -159,17 +163,77 @@ static int save_font(uint8_t *font_data, size_t font_size, const char *pattern, 
 
 // Функция для обновления контрольной суммы ROM
 void update_checksum(uint8_t *data, int size) {
-    // Расчет контрольной суммы BIOS
-    // Обычно контрольная сумма находится в последнем байте и должна
-    // делать сумму всех байтов кратной 256 (т.е. сумма mod 256 = 0)
     uint8_t sum = 0;
-    // Суммируем все байты, кроме последнего
+
     for (int i = 0; i < size - 1; i++) {
         sum += data[i];
     }
-    // Устанавливаем последний байт так, чтобы сумма была равна 0
+
     data[size - 1] = (uint8_t)(0x100 - sum);
     printf("Updated checksum to: 0x%02X\n", data[size - 1]);
+}
+
+// Новая функция для поиска и замены паттернов DOS-шрифта
+void find_and_replace_patterns(uint8_t *rom_data, int rom_size,
+                               uint8_t *fontrom, int fontrom_offset,
+                               uint8_t *dosfont, uint8_t *newfont,
+                               int font_size) {
+    int patterns_found = 0;
+    int patterns_replaced = 0;
+    int max_chars = font_size / CHAR_SIZE_8X16;
+
+    if (max_chars > 256) max_chars = 256; // ограничиваем 256 символами
+
+    printf("\nSearching for DOS font patterns...\n");
+
+    // Для каждого символа
+    for (int char_idx = 0; char_idx < max_chars; char_idx++) {
+        uint8_t *fontrom_char = fontrom + (char_idx * CHAR_SIZE_8X16);
+        uint8_t *dosfont_char = dosfont + (char_idx * CHAR_SIZE_8X16);
+
+        // Проверяем, не выходим ли за границы
+        if ((char_idx * CHAR_SIZE_8X16 + CHAR_SIZE_8X16) > font_size) {
+            break;
+        }
+
+        // Сравниваем паттерны символа
+        if (memcmp(fontrom_char, dosfont_char, CHAR_SIZE_8X16) != 0) {
+            patterns_found++;
+
+            // Ищем паттерн во всем ROM, кроме области основного шрифта
+            uint8_t *search_ptr = rom_data;
+            uint8_t *end_ptr = rom_data + rom_size - CHAR_SIZE_8X16;
+            uint8_t *fontrom_start = rom_data + fontrom_offset;
+            uint8_t *fontrom_end = fontrom_start + font_size;
+
+            while (search_ptr <= end_ptr) {
+                // Пропускаем область основного шрифта
+                if (search_ptr >= fontrom_start && search_ptr < fontrom_end) {
+                    search_ptr = fontrom_end;
+                    continue;
+                }
+
+                if (memcmp(search_ptr, dosfont_char, CHAR_SIZE_8X16) == 0) {
+                    // Нашли паттерн - заменяем на символ из нового шрифта
+                    uint8_t *newfont_char = newfont + (char_idx * CHAR_SIZE_8X16);
+
+                    // Проверяем, не выходит ли новый символ за границы
+                    if ((char_idx * CHAR_SIZE_8X16 + CHAR_SIZE_8X16) <= font_size) {
+                        memcpy(search_ptr, newfont_char, CHAR_SIZE_8X16);
+                        patterns_replaced++;
+                    }
+
+                    search_ptr += CHAR_SIZE_8X16; // Переходим к следующему блоку
+                } else {
+                    search_ptr++;
+                }
+            }
+        }
+    }
+
+    printf("  Characters compared: %d\n", max_chars);
+    printf("  Non-matching patterns found: %d\n", patterns_found);
+    printf("  Patterns replaced in ROM: %d\n", patterns_replaced);
 }
 
 // Функция для вывода справки
@@ -181,12 +245,16 @@ void print_help() {
     printf("  -8, --f8 <file>      8x8 font file\n");
     printf("  -4, --f14 <file>     8x14 font file\n");
     printf("  -6, --f16 <file>     8x16 font file\n");
+    printf("  -d, --dosfont <file> DOS 8x16 font file for pattern matching\n");
     printf("  -o, --output <file>  Output ROM file (default: %s)\n", DEFAULT_OUTPUT);
     printf("  -s, --save[=pattern] Save original fonts with optional name pattern\n");
     printf("  -n, --normal         Input ROM has normal (linear) font layout\n");
     printf("  -h, --help           Display this help message\n\n");
     printf("If any font file is not specified, that font will not be replaced.\n");
     printf("By default, odd/even (interleaved) font layout is expected.\n");
+    printf("The --dosfont option enables pattern matching: finds characters that\n");
+    printf("differ between ROM and DOS font and replaces their occurrences elsewhere\n");
+    printf("in the ROM before updating the main font.\n");
     exit(0);
 }
 
@@ -197,6 +265,7 @@ options_t parse_options(int argc, char *argv[]) {
         .font_8x8 = NULL,
         .font_8x14 = NULL,
         .font_8x16 = NULL,
+        .dosfont_8x16 = NULL,
         .output_rom = DEFAULT_OUTPUT,
         .save_pattern = NULL,
         .is_normal = 0
@@ -207,6 +276,7 @@ options_t parse_options(int argc, char *argv[]) {
         {"f8",      required_argument, 0, '8'},
         {"f14",     required_argument, 0, '4'},
         {"f16",     required_argument, 0, '6'},
+        {"dosfont", required_argument, 0, 'd'},
         {"output",  required_argument, 0, 'o'},
         {"save",    optional_argument, 0, 's'},
         {"normal",  no_argument,       0, 'n'},
@@ -217,7 +287,7 @@ options_t parse_options(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:s::nh",
+    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:d:s::nh",
                               long_options, &option_index)) != -1) {
         switch (opt) {
             case 'i':
@@ -231,6 +301,9 @@ options_t parse_options(int argc, char *argv[]) {
                 break;
             case '6':
                 opts.font_8x16 = optarg;
+                break;
+            case 'd':
+                opts.dosfont_8x16 = optarg;
                 break;
             case 'o':
                 opts.output_rom = optarg;
@@ -252,6 +325,7 @@ options_t parse_options(int argc, char *argv[]) {
         fprintf(stderr, "Error: Input ROM file is required\n");
         print_help();
     }
+
     return opts;
 }
 
@@ -322,11 +396,9 @@ int main(int argc, char *argv[]) {
 
     // Подготавливаем working_data в зависимости от типа ROM
     if (opts.is_normal) {
-        // Для нормального ROM работаем напрямую с оригинальными данными
         working_data = rom_data;
         printf("Using normal (linear) font layout\n");
     } else {
-        // Для odd/even ROM нормализуем в отдельный буфер
         working_data = malloc(filesize);
         if (!working_data) {
             perror("Memory allocation failed");
@@ -347,14 +419,14 @@ int main(int argc, char *argv[]) {
     font_8x8_offset = find_signature(working_data, filesize,
                                      FONT_8X8_SIGNATURE,
                                      sizeof(FONT_8X8_SIGNATURE), search_start_offset);
-    if (font_8x8_offset > 0) {
+    if (font_8x8_offset >= 0) {
         search_start_offset = font_8x8_offset + FONT_8X8_SIZE;
     }
 
     font_8x14_offset = find_signature(working_data, filesize,
                                       FONT_8X14_SIGNATURE,
                                       sizeof(FONT_8X14_SIGNATURE), search_start_offset);
-    if (font_8x14_offset > 0) {
+    if (font_8x14_offset >= 0) {
         search_start_offset = font_8x14_offset + FONT_8X14_SIZE;
     }
 
@@ -362,7 +434,7 @@ int main(int argc, char *argv[]) {
                                       FONT_8X16_SIGNATURE,
                                       sizeof(FONT_8X16_SIGNATURE), search_start_offset);
 
-    printf("Font positions found:\n");
+    printf("\nFont positions found:\n");
     printf("  8x8:  %s (0x%X)\n",
            font_8x8_offset >= 0 ? "Found" : "Not found",
            font_8x8_offset);
@@ -376,22 +448,62 @@ int main(int argc, char *argv[]) {
     // Сохраняем оригинальные шрифты если нужно
     if (opts.save_pattern != NULL) {
         if (font_8x8_offset >= 0) {
-            save_font(working_data + font_8x8_offset, 256 * 8, opts.save_pattern, "8x8");
+            save_font(working_data + font_8x8_offset, FONT_8X8_SIZE, 
+                     opts.save_pattern, "8x8");
         }
         if (font_8x14_offset >= 0) {
-            save_font(working_data + font_8x14_offset, 256 * 14, opts.save_pattern, "8x14");
+            save_font(working_data + font_8x14_offset, FONT_8X14_SIZE, 
+                     opts.save_pattern, "8x14");
         }
         if (font_8x16_offset >= 0) {
-            save_font(working_data + font_8x16_offset, 256 * 16, opts.save_pattern, "8x16");
+            save_font(working_data + font_8x16_offset, FONT_8X16_SIZE, 
+                     opts.save_pattern, "8x16");
         }
     }
 
-    // Заменяем шрифты, если указаны
+    // Обработка DOS-шрифта (поиск и замена паттернов ДО замены основного шрифта)
+    if (opts.dosfont_8x16 && font_8x16_offset >= 0 && opts.font_8x16) {
+        int dosfont_size;
+        uint8_t *dosfont_data = load_font_file(opts.dosfont_8x16, &dosfont_size);
+
+        if (dosfont_data) {
+            if (dosfont_size < FONT_8X16_SIZE) {
+                printf("Warning: DOS font file size (%d) is smaller than expected (%d)\n",
+                       dosfont_size, FONT_8X16_SIZE);
+            }
+
+            // Загружаем новый шрифт
+            int newfont_size;
+            uint8_t *newfont_data = load_font_file(opts.font_8x16, &newfont_size);
+
+            if (newfont_data) {
+                if (newfont_size < FONT_8X16_SIZE) {
+                    printf("Warning: New font file size (%d) is smaller than expected (%d)\n",
+                           newfont_size, FONT_8X16_SIZE);
+                }
+
+                // Указатель на область шрифта в working_data
+                uint8_t *fontrom_ptr = working_data + font_8x16_offset;
+
+                // Ищем и заменяем паттерны
+                find_and_replace_patterns(working_data, filesize,
+                                        fontrom_ptr, font_8x16_offset,
+                                        dosfont_data, newfont_data,
+                                        FONT_8X16_SIZE);
+
+                free(newfont_data);
+            }
+
+            free(dosfont_data);
+        }
+    }
+
+    // Заменяем шрифты
     if (opts.font_8x8 && font_8x8_offset >= 0) {
         int font_size;
         uint8_t *font_data = load_font_file(opts.font_8x8, &font_size);
         if (font_data) {
-            printf("Replacing 8x8 font from %s\n", opts.font_8x8);
+            printf("\nReplacing 8x8 font from %s\n", opts.font_8x8);
             if (font_size != FONT_8X8_SIZE) {
                 printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
                        font_size, FONT_8X8_SIZE);
@@ -406,7 +518,7 @@ int main(int argc, char *argv[]) {
         int font_size;
         uint8_t *font_data = load_font_file(opts.font_8x14, &font_size);
         if (font_data) {
-            printf("Replacing 8x14 font from %s\n", opts.font_8x14);
+            printf("\nReplacing 8x14 font from %s\n", opts.font_8x14);
             if (font_size != FONT_8X14_SIZE) {
                 printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
                        font_size, FONT_8X14_SIZE);
@@ -421,7 +533,7 @@ int main(int argc, char *argv[]) {
         int font_size;
         uint8_t *font_data = load_font_file(opts.font_8x16, &font_size);
         if (font_data) {
-            printf("Replacing 8x16 font from %s\n", opts.font_8x16);
+            printf("\nReplacing 8x16 font from %s\n", opts.font_8x16);
             if (font_size != FONT_8X16_SIZE) {
                 printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
                        font_size, FONT_8X16_SIZE);
@@ -439,30 +551,25 @@ int main(int argc, char *argv[]) {
     // Обновляем контрольную сумму
     update_checksum(working_data, filesize);
 
-    // Подготавливаем выходные данные в зависимости от типа ROM
+    // Подготавливаем выходные данные
     if (opts.is_normal) {
-        // Для нормального ROM выходные данные = working_data
         output_data = working_data;
     } else {
-        // Для odd/even ROM преобразуем обратно в rom_data
         linear_to_odd_even(working_data, rom_data, filesize);
         output_data = rom_data;
-        free(working_data);  // working_data больше не нужен
+        free(working_data);
     }
 
     // Записываем результат
     write_rom_file(opts.output_rom, output_data, filesize);
 
-    printf("ROM updated successfully. Output written to %s\n", opts.output_rom);
+    printf("\nROM updated successfully. Output written to %s\n", opts.output_rom);
 
     // Очистка
     if (opts.is_normal) {
-        // Для normal режима rom_data = working_data = output_data
         free(rom_data);
     } else {
-        // Для odd/even режима rom_data использован как output_data
-        free(rom_data);  // rom_data = output_data
-        // working_data уже освобожден выше
+        free(rom_data);
     }
 
     return 0;
