@@ -16,14 +16,14 @@
 #define FONT_8X16_SIZE   4096
 
 // Магические сигнатуры для поиска шрифтов
-const unsigned char FONT_8X8_SIGNATURE[] = {
+const uint8_t FONT_8X8_SIGNATURE[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7E, 0x81, 0xA5, 0x81
 };
-const unsigned char FONT_8X14_SIGNATURE[] = {
+const uint8_t FONT_8X14_SIGNATURE[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x7E, 0x81, 0xA5, 0x81
 };
-const unsigned char FONT_8X16_SIGNATURE[] = {
+const uint8_t FONT_8X16_SIGNATURE[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7E, 0x81, 0xA5, 0x81
 };
@@ -36,10 +36,11 @@ typedef struct {
     char *font_8x16;
     char *output_rom;
     char *save_pattern;
+    int is_normal;  // новая опция
 } options_t;
 
 #ifdef __DEBUG__
-int save_tmp_debfile(char * filename, int filesize, unsigned char *data){
+int save_tmp_debfile(char * filename, int filesize, uint8_t *data){
     // Записываем результат
     int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1) {
@@ -54,12 +55,11 @@ int save_tmp_debfile(char * filename, int filesize, unsigned char *data){
     close(fd);
     return 0;
 }
-
 #endif //__DEBUG__
 
 // Функция для нормализации данных ROM
 // (из специфичного формата в последовательный)
-void odd_even_to_linear(unsigned char *in, unsigned char *out, int size) {
+void odd_even_to_linear(uint8_t *in, uint8_t *out, int size) {
     for (int i = 0; i < size; i++) {
         if (i % 2) {
             out[i] = in[i/2 + 0x4000];
@@ -71,7 +71,7 @@ void odd_even_to_linear(unsigned char *in, unsigned char *out, int size) {
 
 // Функция для обратного преобразования
 // (из последовательного формата в специфичный для ПЗУ)
-void linear_to_odd_even(unsigned char *in, unsigned char *out, int size) {
+void linear_to_odd_even(uint8_t *in, uint8_t *out, int size) {
     for (int i = 0; i < size; i++) {
         if (i % 2) {
             out[i/2 + 0x4000] = in[i];
@@ -82,8 +82,8 @@ void linear_to_odd_even(unsigned char *in, unsigned char *out, int size) {
 }
 
 // Функция для поиска подпоследовательности в массиве
-int find_signature(unsigned char *data, int data_len,
-                   const unsigned char *signature, int sig_len, int search_start_pos) {
+int find_signature(uint8_t *data, int data_len,
+                   const uint8_t *signature, int sig_len, int search_start_pos) {
     for (int i = search_start_pos; i <= data_len - sig_len; i++) {
         int found = 1;
         for (int j = 0; j < sig_len; j++) {
@@ -100,10 +100,10 @@ int find_signature(unsigned char *data, int data_len,
 }
 
 // Функция для загрузки файла шрифта
-unsigned char *load_font_file(const char *filename, int *size) {
+uint8_t *load_font_file(const char *filename, int *size) {
     struct stat st;
     int fd;
-    unsigned char *data;
+    uint8_t *data;
     if (stat(filename, &st) != 0) {
         perror("Error getting font file size");
         return NULL;
@@ -158,17 +158,17 @@ static int save_font(uint8_t *font_data, size_t font_size, const char *pattern, 
 }
 
 // Функция для обновления контрольной суммы ROM
-void update_checksum(unsigned char *data, int size) {
+void update_checksum(uint8_t *data, int size) {
     // Расчет контрольной суммы BIOS
     // Обычно контрольная сумма находится в последнем байте и должна
     // делать сумму всех байтов кратной 256 (т.е. сумма mod 256 = 0)
-    unsigned char sum = 0;
+    uint8_t sum = 0;
     // Суммируем все байты, кроме последнего
     for (int i = 0; i < size - 1; i++) {
         sum += data[i];
     }
     // Устанавливаем последний байт так, чтобы сумма была равна 0
-    data[size - 1] = (unsigned char)(0x100 - sum);
+    data[size - 1] = (uint8_t)(0x100 - sum);
     printf("Updated checksum to: 0x%02X\n", data[size - 1]);
 }
 
@@ -183,8 +183,10 @@ void print_help() {
     printf("  -6, --f16 <file>     8x16 font file\n");
     printf("  -o, --output <file>  Output ROM file (default: %s)\n", DEFAULT_OUTPUT);
     printf("  -s, --save[=pattern] Save original fonts with optional name pattern\n");
+    printf("  -n, --normal         Input ROM has normal (linear) font layout\n");
     printf("  -h, --help           Display this help message\n\n");
     printf("If any font file is not specified, that font will not be replaced.\n");
+    printf("By default, odd/even (interleaved) font layout is expected.\n");
     exit(0);
 }
 
@@ -195,8 +197,11 @@ options_t parse_options(int argc, char *argv[]) {
         .font_8x8 = NULL,
         .font_8x14 = NULL,
         .font_8x16 = NULL,
-        .output_rom = DEFAULT_OUTPUT
+        .output_rom = DEFAULT_OUTPUT,
+        .save_pattern = NULL,
+        .is_normal = 0
     };
+
     struct option long_options[] = {
         {"input",   required_argument, 0, 'i'},
         {"f8",      required_argument, 0, '8'},
@@ -204,12 +209,15 @@ options_t parse_options(int argc, char *argv[]) {
         {"f16",     required_argument, 0, '6'},
         {"output",  required_argument, 0, 'o'},
         {"save",    optional_argument, 0, 's'},
+        {"normal",  no_argument,       0, 'n'},
         {"help",    no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
+
     int opt;
     int option_index = 0;
-    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:s::h",
+
+    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:s::nh",
                               long_options, &option_index)) != -1) {
         switch (opt) {
             case 'i':
@@ -230,12 +238,16 @@ options_t parse_options(int argc, char *argv[]) {
             case 's':
                 opts.save_pattern = optarg ? optarg : "";
                 break;
+            case 'n':
+                opts.is_normal = 1;
+                break;
             case 'h':
             default:
                 print_help();
                 break;
         }
     }
+
     if (opts.input_rom == NULL) {
         fprintf(stderr, "Error: Input ROM file is required\n");
         print_help();
@@ -243,44 +255,43 @@ options_t parse_options(int argc, char *argv[]) {
     return opts;
 }
 
-int get_filesize (char * filename) {
+int get_filesize(char *filename) {
     struct stat st;
     if (stat(filename, &st) != 0) {
         perror("Error getting input file size");
-        exit (-1);
+        exit(-1);
     }
     return st.st_size;
 }
 
-char * read_rom_file(char * input_file, int filesize) {
-    // Получаем размер входного файла
-
+uint8_t *read_rom_file(char *input_file, int filesize) {
     printf("Input ROM: %s (size: %d bytes)\n", input_file, filesize);
-    char *rom_data = malloc(filesize);
+
+    uint8_t *rom_data = malloc(filesize);
     if (!rom_data) {
         perror("Memory allocation failed");
-        free(rom_data);
         exit(-1);
     }
-    
-    // Читаем входной файл
+
     int fd = open(input_file, O_RDONLY);
     if (fd == -1) {
         perror("Error opening input file");
         free(rom_data);
         exit(-1);
     }
+
     if (read(fd, rom_data, filesize) != filesize) {
         perror("Error reading input file");
         close(fd);
         free(rom_data);
         exit(-1);
     }
+
     close(fd);
     return rom_data;
 }
 
-void write_rom_file(char * output_file, char * output_data, int filesize) {
+void write_rom_file(char *output_file, uint8_t *output_data, int filesize) {
     int fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1) {
         perror("Error opening output file");
@@ -298,62 +309,58 @@ void write_rom_file(char * output_file, char * output_data, int filesize) {
     close(fd);
 }
 
-
 int main(int argc, char *argv[]) {
     options_t opts = parse_options(argc, argv);
-    
-    int font_8x8_offset = -1, font_8x14_offset = -1, font_8x16_offset = -1;
-    int is_normal = 0; // по умолчанию считаем образ "смешанным" (odd/even)
 
+    int font_8x8_offset = -1, font_8x14_offset = -1, font_8x16_offset = -1;
     int filesize = get_filesize(opts.input_rom);
 
-    // Выделяем память для данных
+    // Читаем ROM
+    uint8_t *rom_data = read_rom_file(opts.input_rom, filesize);
+    uint8_t *working_data = NULL;
+    uint8_t *output_data = NULL;
 
-
-    char *rom_data = read_rom_file(opts.input_rom, filesize);
-    char *working_data;
-
-    working_data = malloc(filesize);
-
-    if (is_normal) {
-            // Если образ нормальный, работаем напрямую
-            working_data = rom_data;
-            printf("Using normal (linear) font layout\n");
-        } else {
-            // Если образ в odd/even формате, нормализуем
-            working_data = malloc(filesize);
-            
-            if (!working_data) {
-                perror("Memory allocation failed");
-                free(rom_data);
-                free(working_data);
-                exit(-1);
-            }
-                // Нормализуем данные
-            odd_even_to_linear(rom_data, working_data, filesize);
-            printf("Converting from odd/even to linear layout\n");
+    // Подготавливаем working_data в зависимости от типа ROM
+    if (opts.is_normal) {
+        // Для нормального ROM работаем напрямую с оригинальными данными
+        working_data = rom_data;
+        printf("Using normal (linear) font layout\n");
+    } else {
+        // Для odd/even ROM нормализуем в отдельный буфер
+        working_data = malloc(filesize);
+        if (!working_data) {
+            perror("Memory allocation failed");
+            free(rom_data);
+            exit(-1);
         }
+        odd_even_to_linear(rom_data, working_data, filesize);
+        printf("Converting from odd/even to linear layout\n");
+    }
 
     #ifdef __DEBUG__
     save_tmp_debfile("normalize.dat", filesize, working_data);
     #endif
-    int search_start_offset = 0;
+
     // Ищем шрифты по сигнатурам
+    int search_start_offset = 0;
+
     font_8x8_offset = find_signature(working_data, filesize,
-                                      FONT_8X8_SIGNATURE,
-                                      sizeof(FONT_8X8_SIGNATURE), search_start_offset);
-    if (font_8x8_offset) {
+                                     FONT_8X8_SIGNATURE,
+                                     sizeof(FONT_8X8_SIGNATURE), search_start_offset);
+    if (font_8x8_offset > 0) {
         search_start_offset = font_8x8_offset + FONT_8X8_SIZE;
     }
+
     font_8x14_offset = find_signature(working_data, filesize,
-                                       FONT_8X14_SIGNATURE,
-                                       sizeof(FONT_8X14_SIGNATURE), search_start_offset);
-    if (font_8x14_offset) {
+                                      FONT_8X14_SIGNATURE,
+                                      sizeof(FONT_8X14_SIGNATURE), search_start_offset);
+    if (font_8x14_offset > 0) {
         search_start_offset = font_8x14_offset + FONT_8X14_SIZE;
     }
+
     font_8x16_offset = find_signature(working_data, filesize,
-                                       FONT_8X16_SIGNATURE,
-                                       sizeof(FONT_8X16_SIGNATURE), search_start_offset);
+                                      FONT_8X16_SIGNATURE,
+                                      sizeof(FONT_8X16_SIGNATURE), search_start_offset);
 
     printf("Font positions found:\n");
     printf("  8x8:  %s (0x%X)\n",
@@ -366,75 +373,65 @@ int main(int argc, char *argv[]) {
            font_8x16_offset >= 0 ? "Found" : "Not found",
            font_8x16_offset);
 
-    if ((font_8x8_offset >= 0) && (opts.save_pattern != NULL))  {
-        save_font(working_data + font_8x8_offset, 256 * 8, opts.save_pattern, "8x8");
+    // Сохраняем оригинальные шрифты если нужно
+    if (opts.save_pattern != NULL) {
+        if (font_8x8_offset >= 0) {
+            save_font(working_data + font_8x8_offset, 256 * 8, opts.save_pattern, "8x8");
+        }
+        if (font_8x14_offset >= 0) {
+            save_font(working_data + font_8x14_offset, 256 * 14, opts.save_pattern, "8x14");
+        }
+        if (font_8x16_offset >= 0) {
+            save_font(working_data + font_8x16_offset, 256 * 16, opts.save_pattern, "8x16");
+        }
     }
-
-    if ((font_8x14_offset >= 0) && (opts.save_pattern != NULL)) {
-        save_font(working_data + font_8x14_offset, 256 * 14, opts.save_pattern, "8x14");
-    }
-
-    if  ((font_8x16_offset >= 0) && (opts.save_pattern != NULL)) {
-        save_font(working_data + font_8x16_offset, 256 * 16, opts.save_pattern, "8x16");
-    }
-
 
     // Заменяем шрифты, если указаны
     if (opts.font_8x8 && font_8x8_offset >= 0) {
         int font_size;
-
-        unsigned char *font_data = load_font_file(opts.font_8x8, &font_size);
-            if (font_data) {
+        uint8_t *font_data = load_font_file(opts.font_8x8, &font_size);
+        if (font_data) {
             printf("Replacing 8x8 font from %s\n", opts.font_8x8);
-
-            // Проверяем размер шрифта
             if (font_size != FONT_8X8_SIZE) {
                 printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
                        font_size, FONT_8X8_SIZE);
             }
-
-            // Копируем шрифт в ROM
             int copy_size = (font_size < FONT_8X8_SIZE) ? font_size : FONT_8X8_SIZE;
             memcpy(working_data + font_8x8_offset, font_data, copy_size);
-
             free(font_data);
         }
     }
+
     if (opts.font_8x14 && font_8x14_offset >= 0) {
         int font_size;
-        unsigned char *font_data = load_font_file(opts.font_8x14, &font_size);
-            if (font_data) {
+        uint8_t *font_data = load_font_file(opts.font_8x14, &font_size);
+        if (font_data) {
             printf("Replacing 8x14 font from %s\n", opts.font_8x14);
-                    // Проверяем размер шрифта
             if (font_size != FONT_8X14_SIZE) {
                 printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
                        font_size, FONT_8X14_SIZE);
             }
-                    // Копируем шрифт в ROM
             int copy_size = (font_size < FONT_8X14_SIZE) ? font_size : FONT_8X14_SIZE;
             memcpy(working_data + font_8x14_offset, font_data, copy_size);
-
             free(font_data);
         }
     }
+
     if (opts.font_8x16 && font_8x16_offset >= 0) {
         int font_size;
-        unsigned char *font_data = load_font_file(opts.font_8x16, &font_size);
-            if (font_data) {
+        uint8_t *font_data = load_font_file(opts.font_8x16, &font_size);
+        if (font_data) {
             printf("Replacing 8x16 font from %s\n", opts.font_8x16);
-                    // Проверяем размер шрифта
             if (font_size != FONT_8X16_SIZE) {
                 printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
                        font_size, FONT_8X16_SIZE);
             }
-
-            // Копируем шрифт в ROM
             int copy_size = (font_size < FONT_8X16_SIZE) ? font_size : FONT_8X16_SIZE;
             memcpy(working_data + font_8x16_offset, font_data, copy_size);
-
             free(font_data);
         }
     }
+
     #ifdef __DEBUG__
     save_tmp_debfile("fnt_updated.dat", filesize, working_data);
     #endif
@@ -442,28 +439,31 @@ int main(int argc, char *argv[]) {
     // Обновляем контрольную сумму
     update_checksum(working_data, filesize);
 
-
-    unsigned char *output_data;
-    
-    if (is_normal) {
-        // Для нормального образа записываем как есть
+    // Подготавливаем выходные данные в зависимости от типа ROM
+    if (opts.is_normal) {
+        // Для нормального ROM выходные данные = working_data
         output_data = working_data;
     } else {
-        // Для odd/even образа перемешиваем обратно
-        output_data = malloc(filesize);
-        // Преобразуем обратно в формат для ПЗУ
-        linear_to_odd_even(working_data, output_data, filesize);
-        free(working_data);
+        // Для odd/even ROM преобразуем обратно в rom_data
+        linear_to_odd_even(working_data, rom_data, filesize);
+        output_data = rom_data;
+        free(working_data);  // working_data больше не нужен
     }
 
-    // Записываем результат opts.output_rom
+    // Записываем результат
     write_rom_file(opts.output_rom, output_data, filesize);
-    
+
     printf("ROM updated successfully. Output written to %s\n", opts.output_rom);
 
     // Очистка
-    if (!is_normal) free(output_data);
-    free(rom_data);
+    if (opts.is_normal) {
+        // Для normal режима rom_data = working_data = output_data
+        free(rom_data);
+    } else {
+        // Для odd/even режима rom_data использован как output_data
+        free(rom_data);  // rom_data = output_data
+        // working_data уже освобожден выше
+    }
 
     return 0;
 }
