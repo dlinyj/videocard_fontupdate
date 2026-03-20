@@ -3,6 +3,8 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2
 LDFLAGS = 
+NASM = nasm
+NASMFLAGS = -f bin
 
 # Основные программы в корне
 MAIN_TARGETS = fontupdate
@@ -10,8 +12,11 @@ MAIN_TARGETS = fontupdate
 # Утилиты в папке utils
 UTILS_TARGETS = encode addchecksum pattern_replace dos_font_viewer
 
+# Программы на ассемблере
+ASM_TARGETS = dos_getfont/getfont.com
+
 # Правило по умолчанию
-all: $(MAIN_TARGETS) utils
+all: $(MAIN_TARGETS) utils $(ASM_TARGETS)
 
 # Правила для основных программ в корне
 
@@ -28,19 +33,24 @@ utils/%: utils/%.c
 # Цель для компиляции всех утилит
 utils: $(addprefix utils/, $(UTILS_TARGETS))
 
+# Правило для сборки dosfont (сохранение шрифта VGA)
+dos_getfont/getfont.com: dos_getfont/getfont.asm
+	$(NASM) $(NASMFLAGS) $< -o $@
+
 # Отладочная сборка
-debug: fontupdate_debug utils
+debug: fontupdate_debug utils $(ASM_TARGETS)
 
 # Очистка проекта
 clean:
 	rm -f $(MAIN_TARGETS) $(addprefix utils/, $(UTILS_TARGETS)) *.o *~ core
+	rm -f dos_getfont/getfont.com
 
 # Цель для создания архива проекта
 dist: clean
 	mkdir -p vga-rom-tools
 	cp *.c Makefile README* vga-rom-tools/
 	cp utils/*.c utils/*.py utils/*.json vga-rom-tools/utils/
-	cp -r firmware fnt img update vga-rom-tools/
+	cp -r firmware fnt img update dos_getfont vga-rom-tools/
 	tar -czf vga-rom-tools.tar.gz vga-rom-tools
 	rm -rf vga-rom-tools
 
