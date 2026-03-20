@@ -39,6 +39,7 @@ typedef struct {
     char *output_rom;
     char *save_pattern;
     int is_normal;
+    int output_normal;
 } options_t;
 
 #ifdef __DEBUG__
@@ -248,7 +249,8 @@ void print_help() {
     printf("  -d, --dosfont <file> DOS 8x16 font file for pattern matching\n");
     printf("  -o, --output <file>  Output ROM file (default: %s)\n", DEFAULT_OUTPUT);
     printf("  -s, --save[=pattern] Save original fonts with optional name pattern\n");
-    printf("  -n, --normal         Input ROM has normal (linear) font layout\n");
+    printf("  -n, --normal         The input ROM image has a linear byte arrangement\n");
+    printf("  -m, --mix            The output ROM image will have the following order:\n\t\todd at the beginning, even in the middle.\n");
     printf("  -h, --help           Display this help message\n\n");
     printf("If any font file is not specified, that font will not be replaced.\n");
     printf("By default, odd/even (interleaved) font layout is expected.\n");
@@ -268,7 +270,8 @@ options_t parse_options(int argc, char *argv[]) {
         .dosfont_8x16 = NULL,
         .output_rom = DEFAULT_OUTPUT,
         .save_pattern = NULL,
-        .is_normal = 0
+        .is_normal = 0,
+        .output_normal = 1
     };
 
     struct option long_options[] = {
@@ -280,6 +283,7 @@ options_t parse_options(int argc, char *argv[]) {
         {"output",  required_argument, 0, 'o'},
         {"save",    optional_argument, 0, 's'},
         {"normal",  no_argument,       0, 'n'},
+        {"mix",     no_argument,       0, 'm'},
         {"help",    no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
@@ -287,7 +291,7 @@ options_t parse_options(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:d:s::nh",
+    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:d:s::nmh",
                               long_options, &option_index)) != -1) {
         switch (opt) {
             case 'i':
@@ -313,6 +317,9 @@ options_t parse_options(int argc, char *argv[]) {
                 break;
             case 'n':
                 opts.is_normal = 1;
+                break;
+            case 'm':
+                opts.output_normal = 0;
                 break;
             case 'h':
             default:
@@ -552,12 +559,11 @@ int main(int argc, char *argv[]) {
     update_checksum(working_data, filesize);
 
     // Подготавливаем выходные данные
-    if (opts.is_normal) {
+    if (opts.output_normal) {
         output_data = working_data;
     } else {
         linear_to_odd_even(working_data, rom_data, filesize);
         output_data = rom_data;
-        free(working_data);
     }
 
     // Записываем результат
@@ -565,12 +571,14 @@ int main(int argc, char *argv[]) {
 
     printf("\nROM updated successfully. Output written to %s\n", opts.output_rom);
 
-    // Очистка
-    if (opts.is_normal) {
-        free(rom_data);
-    } else {
+    if (NULL != rom_data) {
         free(rom_data);
     }
-
+    if (output_data != NULL && output_data != working_data) {
+        free(output_data);
+    }
+    if (working_data != NULL && working_data != rom_data) {
+        free(working_data);
+    }
     return 0;
 }
