@@ -7,6 +7,7 @@
 #include <getopt.h>
 #include <string.h>
 #include <stdint.h>
+#include "fnt_def.h"
 
 #define DEFAULT_OUTPUT "upd.rom"
 
@@ -40,6 +41,7 @@ typedef struct {
     char *save_pattern;
     int is_normal;
     int output_normal;
+    int default_fnt;
 } options_t;
 
 #ifdef __DEBUG__
@@ -243,17 +245,18 @@ void print_help() {
     printf("Update fonts in VGA BIOS ROM files.\n\n");
     printf("Options:\n");
     printf("  -i, --input <file>   Input ROM file (required)\n");
+    printf("  -d, --default        Use default fonts. Font files are ignored\n");
     printf("  -8, --f8 <file>      8x8 font file\n");
     printf("  -4, --f14 <file>     8x14 font file\n");
     printf("  -6, --f16 <file>     8x16 font file\n");
-    printf("  -d, --dosfont <file> DOS 8x16 font file for pattern matching\n");
+    printf("  -f, --fontdos <file> DOS 8x16 font file for pattern matching\n");
     printf("  -o, --output <file>  Output ROM file (default: %s)\n", DEFAULT_OUTPUT);
     printf("  -s, --save[=pattern] Save original fonts with optional name pattern\n");
     printf("  -n, --normal         The input ROM image has a linear byte arrangement\n");
-    printf("  -m, --mix            The output ROM image will have the following order:\n\t\todd at the beginning, even in the middle.\n");
+    printf("  -m, --mix            The output ROM image will have the following order:\n\t\todd at the beginning, even in the middle\n");
     printf("  -h, --help           Display this help message\n\n");
     printf("If any font file is not specified, that font will not be replaced.\n");
-    printf("By default, odd/even (interleaved) font layout is expected.\n");
+    printf("By default, even and odd (shuffled) data is expected to be interleaved in ROM.\n");
     printf("The --dosfont option enables pattern matching: finds characters that\n");
     printf("differ between ROM and DOS font and replaces their occurrences elsewhere\n");
     printf("in the ROM before updating the main font.\n");
@@ -271,15 +274,17 @@ options_t parse_options(int argc, char *argv[]) {
         .output_rom = DEFAULT_OUTPUT,
         .save_pattern = NULL,
         .is_normal = 0,
-        .output_normal = 1
+        .output_normal = 1,
+        .default_fnt = 0
     };
 
     struct option long_options[] = {
         {"input",   required_argument, 0, 'i'},
+        {"default", no_argument,       0, 'd'},
         {"f8",      required_argument, 0, '8'},
         {"f14",     required_argument, 0, '4'},
         {"f16",     required_argument, 0, '6'},
-        {"dosfont", required_argument, 0, 'd'},
+        {"fontdos", required_argument, 0, 'f'},
         {"output",  required_argument, 0, 'o'},
         {"save",    optional_argument, 0, 's'},
         {"normal",  no_argument,       0, 'n'},
@@ -291,11 +296,14 @@ options_t parse_options(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "i:o:8:4:6:d:s::nmh",
+    while ((opt = getopt_long(argc, argv, "i:do:8:4:6:f:s::nmh",
                               long_options, &option_index)) != -1) {
         switch (opt) {
             case 'i':
                 opts.input_rom = optarg;
+                break;
+            case 'd':
+                opts.default_fnt = 1;
                 break;
             case '8':
                 opts.font_8x8 = optarg;
@@ -306,7 +314,7 @@ options_t parse_options(int argc, char *argv[]) {
             case '6':
                 opts.font_8x16 = optarg;
                 break;
-            case 'd':
+            case 'f':
                 opts.dosfont_8x16 = optarg;
                 break;
             case 'o':
@@ -416,6 +424,16 @@ int main(int argc, char *argv[]) {
         printf("Converting from odd/even to linear layout\n");
     }
 
+    if ((0x55 != working_data[0]) || (0xAA != working_data[1])) {
+        printf("\nWarning! The image is not a BIOS ROM\n");
+        printf("Check the correctness of the selection of alternation of even and odd data in ROM.\n");
+        if (working_data != rom_data) {
+            free(working_data);
+        }
+        free(rom_data);
+        exit(-1);
+    }
+
     #ifdef __DEBUG__
     save_tmp_debfile("normalize.dat", filesize, working_data);
     #endif
@@ -455,15 +473,15 @@ int main(int argc, char *argv[]) {
     // Сохраняем оригинальные шрифты если нужно
     if (opts.save_pattern != NULL) {
         if (font_8x8_offset >= 0) {
-            save_font(working_data + font_8x8_offset, FONT_8X8_SIZE, 
+            save_font(working_data + font_8x8_offset, FONT_8X8_SIZE,
                      opts.save_pattern, "8x8");
         }
         if (font_8x14_offset >= 0) {
-            save_font(working_data + font_8x14_offset, FONT_8X14_SIZE, 
+            save_font(working_data + font_8x14_offset, FONT_8X14_SIZE,
                      opts.save_pattern, "8x14");
         }
         if (font_8x16_offset >= 0) {
-            save_font(working_data + font_8x16_offset, FONT_8X16_SIZE, 
+            save_font(working_data + font_8x16_offset, FONT_8X16_SIZE,
                      opts.save_pattern, "8x16");
         }
     }
