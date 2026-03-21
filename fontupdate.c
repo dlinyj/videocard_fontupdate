@@ -398,6 +398,37 @@ void write_rom_file(char *output_file, uint8_t *output_data, int filesize) {
     close(fd);
 }
 
+void replace_font(uint8_t *working_data, const char *font_path,
+                  int offset, int expected_size, const char *font_name, uint8_t * fnt) {
+    int font_size;
+    uint8_t *font_data;
+    if (NULL == fnt) {
+        if (!font_path || offset < 0) return;
+        font_data = load_font_file(font_path, &font_size);
+        if (!font_data) return;
+    } else {
+        if (offset < 0) return;
+        font_data = fnt;
+        font_size = expected_size;
+    }
+    if (font_path) {
+        printf("\nReplacing %s font from %s\n", font_name, font_path);
+    } else {
+        printf("\nReplacing %s font from the default font\n", font_name);
+    }
+
+    if (font_size != expected_size) {
+        printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
+               font_size, expected_size);
+    }
+
+    size_t copy_size = (font_size < expected_size) ? font_size : expected_size;
+    memcpy(working_data + offset, font_data, copy_size);
+    if (NULL == fnt) {
+        free(font_data);
+    }
+}
+
 int main(int argc, char *argv[]) {
     options_t opts = parse_options(argc, argv);
 
@@ -487,7 +518,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Обработка DOS-шрифта (поиск и замена паттернов ДО замены основного шрифта)
-    if (opts.dosfont_8x16 && font_8x16_offset >= 0 && opts.font_8x16) {
+    if ((opts.dosfont_8x16 && font_8x16_offset >= 0 && opts.font_8x16) || opts.default_fnt) {
         int dosfont_size;
         uint8_t *dosfont_data = load_font_file(opts.dosfont_8x16, &dosfont_size);
 
@@ -499,7 +530,12 @@ int main(int argc, char *argv[]) {
 
             // Загружаем новый шрифт
             int newfont_size;
-            uint8_t *newfont_data = load_font_file(opts.font_8x16, &newfont_size);
+            uint8_t *newfont_data;
+            if (!opts.default_fnt) {
+                newfont_data = load_font_file(opts.font_8x16, &newfont_size);
+            } else {
+                newfont_data = def_fnt8x16;
+            }
 
             if (newfont_data) {
                 if (newfont_size < FONT_8X16_SIZE) {
@@ -515,58 +551,25 @@ int main(int argc, char *argv[]) {
                                         fontrom_ptr, font_8x16_offset,
                                         dosfont_data, newfont_data,
                                         FONT_8X16_SIZE);
-
-                free(newfont_data);
+                if (!opts.default_fnt) {
+                    free(newfont_data);
+                }
             }
 
             free(dosfont_data);
         }
     }
 
-    // Заменяем шрифты
-    if (opts.font_8x8 && font_8x8_offset >= 0) {
-        int font_size;
-        uint8_t *font_data = load_font_file(opts.font_8x8, &font_size);
-        if (font_data) {
-            printf("\nReplacing 8x8 font from %s\n", opts.font_8x8);
-            if (font_size != FONT_8X8_SIZE) {
-                printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
-                       font_size, FONT_8X8_SIZE);
-            }
-            int copy_size = (font_size < FONT_8X8_SIZE) ? font_size : FONT_8X8_SIZE;
-            memcpy(working_data + font_8x8_offset, font_data, copy_size);
-            free(font_data);
-        }
-    }
 
-    if (opts.font_8x14 && font_8x14_offset >= 0) {
-        int font_size;
-        uint8_t *font_data = load_font_file(opts.font_8x14, &font_size);
-        if (font_data) {
-            printf("\nReplacing 8x14 font from %s\n", opts.font_8x14);
-            if (font_size != FONT_8X14_SIZE) {
-                printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
-                       font_size, FONT_8X14_SIZE);
-            }
-            int copy_size = (font_size < FONT_8X14_SIZE) ? font_size : FONT_8X14_SIZE;
-            memcpy(working_data + font_8x14_offset, font_data, copy_size);
-            free(font_data);
-        }
-    }
-
-    if (opts.font_8x16 && font_8x16_offset >= 0) {
-        int font_size;
-        uint8_t *font_data = load_font_file(opts.font_8x16, &font_size);
-        if (font_data) {
-            printf("\nReplacing 8x16 font from %s\n", opts.font_8x16);
-            if (font_size != FONT_8X16_SIZE) {
-                printf("Warning: Font file size (%d) doesn't match expected size (%d)\n",
-                       font_size, FONT_8X16_SIZE);
-            }
-            int copy_size = (font_size < FONT_8X16_SIZE) ? font_size : FONT_8X16_SIZE;
-            memcpy(working_data + font_8x16_offset, font_data, copy_size);
-            free(font_data);
-        }
+    if (0 == opts.default_fnt) {
+        replace_font(working_data, opts.font_8x8,  font_8x8_offset,  FONT_8X8_SIZE,  "8x8",  NULL);
+        replace_font(working_data, opts.font_8x14, font_8x14_offset, FONT_8X14_SIZE, "8x14", NULL);
+        replace_font(working_data, opts.font_8x16, font_8x16_offset, FONT_8X16_SIZE, "8x16", NULL);
+    } else {
+        printf("Using default fonts\n");
+        replace_font(working_data, NULL,  font_8x8_offset,  FONT_8X8_SIZE, "8x8",  def_fnt8x8);
+        replace_font(working_data, NULL, font_8x14_offset, FONT_8X14_SIZE, "8x14", def_fnt8x14);
+        replace_font(working_data, NULL, font_8x16_offset, FONT_8X16_SIZE, "8x16", def_fnt8x16);
     }
 
     #ifdef __DEBUG__
